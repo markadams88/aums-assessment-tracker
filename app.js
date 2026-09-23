@@ -79,7 +79,78 @@ function bankFor(code,n,limit,excludeDone=true,sid){let pool=BANK.filter(b=>b.mo
 function bankSrc(b){return b.spec==='H640'?`${b.series} · ${b.paper} · ${b.q}`:`${b.paper} · ${b.series} · ${b.q}`}
 function bankSpec(b){return b.spec==='H640'?'OCR MEI H640':'Legacy MEI'}
 function qItem(b,sid,interactive=true,showUsed=false){const done=isDone(sid,b.id);
-  return `<div class="q ${done?'done':''}">${interactive?`<input type="checkbox" id="rq-${b.id}" data-act="done" data-sid="${sid}" data-q="${b.id}" ${done?'checked':''} aria-label="Mark ${esc(bankSrc(b))} as done">`:'<span></span>'}<div><div class="src"><span class="sp">${bankSpec(b)}</span> · ${esc(bankSrc(b))}${b.marks?` · ${b.marks} marks`:''}${showUsed&&b.used?` · used in ${esc(b.used)}`:''}</div><div class="d mj">${esc(b.desc)}</div></div></div>`}
+  return `<div class="q ${done?'done':''}">${interactive?`<input type="checkbox" id="rq-${b.id}" data-act="done" data-sid="${sid}" data-q="${b.id}" ${done?'checked':''} aria-label="Mark ${esc(bankSrc(b))} as done">`:'<span></span>'}<div><div class="src"><span class="sp">${bankSpec(b)}</span> · ${esc(bankSrc(b))}${b.marks?` · ${b.marks} marks`:''}${showUsed&&b.used?` · used in ${esc(b.used)}`:''}</div><div class="d mj">${esc(b.desc)}</div>${typeof hasQ==='function'&&hasQ(b.id)?`<div class="qa">${sheetBtns([b.id],bankSrc(b).replace(/ · /g,' '),true)}</div>`:''}</div></div>`}
+
+// ---------- past-paper PDFs ----------
+// QIDX (qindex.js): bank id -> {q:[file,[[page,x0,y0,x1,y1],...]], m:[file,crops], mm:'full'|'shared'}
+const QX=window.QIDX||{};
+const hasQ=id=>!!QX[id]?.q, hasM=id=>!!QX[id]?.m;
+let PDFLIB_P=null;
+function loadPdfLib(){if(window.PDFLib)return Promise.resolve();if(PDFLIB_P)return PDFLIB_P;
+  PDFLIB_P=new Promise((res,rej)=>{const s=document.createElement('script');s.src='pdf-lib.min.js';s.onload=res;s.onerror=()=>{PDFLIB_P=null;rej(new Error('pdf-lib'))};document.head.appendChild(s)});return PDFLIB_P}
+const SRC_CACHE={};
+async function paperBytes(name){
+  if(window.__PAPER_BASE)return fetch(window.__PAPER_BASE+encodeURIComponent(name)).then(r=>{if(!r.ok)throw new Error('fetch '+name);return r.arrayBuffer()});
+  const {data,error}=await sb.storage.from('papers').download(name);if(error||!data)throw new Error('papers '+name+' '+(error?.message||''));return data.arrayBuffer()}
+async function srcDoc(name){if(!SRC_CACHE[name])SRC_CACHE[name]=paperBytes(name).then(b=>PDFLib.PDFDocument.load(b)).catch(e=>{delete SRC_CACHE[name];throw e});return SRC_CACHE[name]}
+const ascii=s=>String(s||'').replace(/[–—]/g,'-').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/\$[^$]*\$/g,m=>m.slice(1,-1).replace(/\\[a-zA-Z]+/g,'').replace(/[{}^_]/g,'')).replace(/[^\x20-\x7E]/g,'');
+function qLabel(b){return b.spec==='H640'?`H640 ${b.paper} ${b.series} ${b.q}`:`${b.paper} ${b.series} ${b.q}`}
+async function makeSheet(ids,kind,title){
+  ids=[...new Set(ids)].filter(id=>kind==='q'?hasQ(id):QX[id]);
+  if(!ids.length){toast(kind==='q'?'No question papers for these yet':'No mark schemes for these yet');return}
+  toast(kind==='q'?'Making your question sheet…':'Making the mark scheme…');
+  try{await loadPdfLib()}catch(e){toast("Couldn't load the PDF maker. Check your connection.");return}
+  const {PDFDocument,StandardFonts,rgb}=PDFLib;
+  const out=await PDFDocument.create();const F=await out.embedFont(StandardFonts.Helvetica),FB=await out.embedFont(StandardFonts.HelveticaBold);
+  const PURPLE=rgb(97/255,0,100/255),GREY=rgb(.42,.42,.46),M=36;
+  let page=null,y=0,W=0,H=0,land=false,pno=0;
+  const newPage=(l)=>{land=!!l;W=land?841.89:595.28;H=land?595.28:841.89;page=out.addPage([W,H]);pno++;y=H-M;
+    page.drawText('AUMS Maths',{x:M,y:18,size:7.5,font:FB,color:PURPLE});page.drawText(ascii(`${kind==='q'?'Questions':'Mark scheme'} - ${title}`).slice(0,90),{x:M+52,y:18,size:7.5,font:F,color:GREY});
+    page.drawText(`Page ${pno}`,{x:W-M-30,y:18,size:7.5,font:F,color:GREY});
+    page.drawText('Past paper material (c) OCR. For use by AUMS students only.',{x:M,y:9,size:6,font:F,color:GREY})};
+  // title block, in the orientation of the first item
+  let firstLand=false;if(kind==='m'){const e0=QX[ids[0]];if(e0?.m){const c=e0.m[1][0];firstLand=c&&(c[3]-c[1])>600}}
+  newPage(firstLand);
+  page.drawRectangle({x:0,y:H-64,width:W,height:64,color:PURPLE});
+  page.drawText(ascii(kind==='q'?'Practice questions':'Mark scheme'),{x:M,y:H-32,size:18,font:FB,color:rgb(1,1,1)});
+  page.drawText(ascii(`${title} - ${ids.length} question${ids.length>1?'s':''} - ${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}`).slice(0,110),{x:M,y:H-50,size:9.5,font:F,color:rgb(1,1,1)});
+  y=H-84;
+  if(kind==='q'){const tot=ids.reduce((t,id)=>t+(+(BANK.find(b=>b.id===id)||{}).marks||0),0);
+    page.drawText(ascii(`Answer in your book or on paper. Show your working.${tot?` Total for the current-spec questions: ${tot} marks.`:''}`),{x:M,y,size:9,font:F,color:GREY});y-=18}
+  let n=0;
+  for(const id of ids){n++;const b=BANK.find(x=>x.id===id);const e=QX[id];const ent=kind==='q'?e.q:e.m;
+    let note='';
+    if(kind==='m'&&!ent)note='No mark scheme for this paper in the bank yet.';
+    else if(kind==='m'&&e.mm==='full')note=`The mark scheme below is for the whole paper. Find question ${b.q.replace('Q','')}.`;
+    else if(kind==='m'&&e.mm==='shared')note='This section also covers the question next to it.';
+    if(kind==='q'&&/^\[Comprehension\]/.test(b.desc||''))note='This question uses the article from the pre-release insert.';
+    if(kind==='q'&&e.q&&/insert/i.test(b.desc||''))note=note||'Part of this question was answered on an insert.';
+    // work out size of first crop to keep the label with it
+    let crops=[];if(ent){const d=await srcDoc(ent[0]);crops=ent[1].map(c=>({d,c}))}
+    const wantLand=kind==='m'?(crops.length?(crops[0].c[3]-crops[0].c[1])>600:land):false;
+    const label=ascii(`${n}. ${qLabel(b)}${b.marks?` - ${b.marks} marks`:''}`);
+    const labH=note?30:18;
+    const fit=(c)=>{const cw=c[3]-c[1],ch=c[4]-c[2];const s=Math.min(1,(W-2*M)/cw);return {s,w:cw*s,h:ch*s}};
+    if(wantLand!==land)newPage(wantLand);
+    const f0=crops.length?fit(crops[0].c):{h:0};
+    if(y-labH-Math.min(f0.h,H*0.35)<M+20)newPage(wantLand);
+    page.drawRectangle({x:M,y:y-14,width:W-2*M,height:16,color:rgb(.96,.93,.96)});
+    page.drawRectangle({x:M,y:y-14,width:3,height:16,color:PURPLE});
+    page.drawText(label.slice(0,95),{x:M+8,y:y-9.5,size:9,font:FB,color:PURPLE});
+    y-=labH-(note?0:0);
+    if(note){page.drawText(ascii(note),{x:M+8,y:y+3,size:8,font:F,color:GREY})}
+    y-=4;
+    for(const {d,c} of crops){const [pi,x0,y0,x1,y1]=c;const sp=d.getPage(pi);const ph=sp.getHeight();
+      let {s,w,h}=fit(c);const avail=H-2*M-30;if(h>avail){s*=avail/h;w=(x1-x0)*s;h=avail}
+      if(y-h<M+16)newPage(land);
+      const ep=await out.embedPage(sp,{left:x0,bottom:ph-y1,right:x1,top:ph-y0});
+      page.drawPage(ep,{x:M+(W-2*M-w)/2,y:y-h,width:w,height:h});y-=h+6}
+    y-=14}
+  const bytes=await out.save();const blob=new Blob([bytes],{type:'application/pdf'});const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=ascii(`AUMS ${kind==='q'?'questions':'mark scheme'} - ${title}`).replace(/[\\/:*?"<>|]/g,'').slice(0,80)+'.pdf';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);toast('PDF ready')}
+function sheetBtns(ids,title,small){ids=ids.filter(hasQ);if(!ids.length)return '';const cls=small?'btn sec xs':'btn sec sm';const t=esc(title);
+  return `<span class="pbtns"><button class="${cls}" data-act="qpdf" data-kind="q" data-ids="${ids.join(',')}" data-title="${t}">${IC.pages} Questions PDF</button><button class="${cls}" data-act="qpdf" data-kind="m" data-ids="${ids.join(',')}" data-title="${t}">${IC.check||IC.pages} Mark scheme</button></span>`}
 
 // ================= icons =================
 const I=(d,extra='')=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${d}</svg>`;
@@ -240,7 +311,7 @@ function authView(){
    <div class="formp"><div class="box">${S.recovery?'':`<div class="tabsx"><button aria-pressed="${S.authTab!=='signin'}" data-act="authtab" data-k="signup">Create account</button><button aria-pressed="${S.authTab==='signin'}" data-act="authtab" data-k="signin">Sign in</button></div>`}${form}<p class="small muted" style="margin-top:18px;text-align:center">Staff? <a class="linkbtn" href="#staff">Teacher sign in</a></p></div></div></div>`;
 }
 function studentPage(me){
-  if(S.stab==='home')return sHome(me);if(S.stab==='record')return sRecord(me);if(S.stab==='results')return sResults(me,S.sAid);if(S.stab==='progress')return sProgress(me);return sPractice(me);
+  if(S.stab==='home')return sHome(me);if(S.stab==='record')return sRecord(me);if(S.stab==='results')return sResults(me,S.sAid);if(S.stab==='progress')return sProgress(me);if(S.stab==='bank')return bankBrowser(false);return sPractice(me);
 }
 function sHome(me){
   const todo=openFor(me.id).filter(a=>!respMap(a.id)[me.id]&&a.status!=='closed');const mine=myAssessments(me.id);const last=mine[mine.length-1];
@@ -313,7 +384,7 @@ function focusBlock(o,sid,interactive,n=4){
    ${tb.length?`<div>${IC.book}<span><b>Textbook</b>${tb.map(esc).join('<br>')}</span></div>`:''}
    ${m?.integral?`<div>${IC.globe}<span><b>Online</b>${esc(m.integral.replace('Integral: ','Integral, '))}</span></div>`:''}
    ${L?`<div>${IC.list}<span><b>Class notebook</b>${esc(m.name)}, lesson ${L.n}: ${esc(L.name)}</span></div>`:''}
-  </div></div><div class="qs">${recs.items.map(b=>qItem(b,sid,interactive)).join('')||'<p class="small muted" style="padding:10px 0">No past-paper questions tagged to this yet.</p>'}</div></div></div>`;
+  </div></div><div class="qs">${recs.items.length>1?`<div class="qs-h">${sheetBtns(recs.items.map(b=>b.id),keyName(o.k))}</div>`:''}${recs.items.map(b=>qItem(b,sid,interactive)).join('')||'<p class="small muted" style="padding:10px 0">No past-paper questions tagged to this yet.</p>'}</div></div></div>`;
 }
 function sResults(me,aid,readOnly=false){
   const mine=myAssessments(me.id);
@@ -357,6 +428,8 @@ function sPractice(me){
   const doneCount=me.id===ME?.id?DB.done.size:(DB.doneAll[me.id]?.size||0);
   let h=`<div class="ph"><div><div class="eyebrow">Practice questions</div><h1>Your practice list</h1><p class="desc">OCR MEI past-paper questions for the lessons you've found hardest across all your assessments. Current specification first.</p></div><div class="band" style="margin:0;min-width:220px"><div class="metric"><span class="lab">Completed</span><span class="val">${doneCount}</span></div><div class="metric"><span class="lab">Lessons</span><span class="val">${list.length}</span></div></div></div>`;
   if(!list.length)return h+`<div class="empty">Everything is at 70% or above. Ask your teacher for extension questions.</div>`;
+  const allIds=list.flatMap(o=>{const L=o.k.includes('-')?lessonKey(o.k):null;return bankFor(L?L.code:o.k,L?L.n:null,6,true,me.id).items.map(b=>b.id)});
+  if(allIds.some(hasQ))h+=`<div class="card" style="margin-bottom:18px"><div class="card-b row" style="justify-content:space-between;gap:12px;flex-wrap:wrap"><div><b>Print your whole practice list</b><div class="small muted">The real exam questions as a PDF, with the matching mark scheme as a separate PDF so you can check your answers after.</div></div>${sheetBtns(allIds,'My practice list')}</div></div>`;
   return h+list.map(o=>focusBlock(o,me.id,true,6)).join('');
 }
 
@@ -450,8 +523,8 @@ function tPlan(){
   if(!asm(S.aid))return noAssess();const {a,sub,whole,groups}=planData();
   let h=`<div class="ph"><div><div class="eyebrow">Revision plan</div><h1>Starters and homework from ${esc(a.id)}</h1><p class="desc">Built from ${grpName()}'s results. Copy it straight into your starter and Link Back planning.</p></div><div class="row" style="align-items:flex-end">${tFilters()}<button class="btn" data-act="copy" data-what="plan">${IC.copy}Copy plan</button></div></div>`;
   if(!sub.length)return h+`<div class="empty">No results yet.</div>`;
-  h+=`<div class="card"><div class="card-h"><div><h2>Whole-class starters</h2><p class="hint">The three lowest ${hasLessons(a)?'lessons':'topics'}, with two past-paper questions each. Questions already used in a Link Back or starter are pushed down the list.</p></div></div><div class="card-b">${whole.map((o,i)=>{const K=kc(o);const b=bankFor(K.code,K.n,2,false,'_').items;return `<div class="rk" style="grid-template-columns:28px minmax(0,1fr) 64px;align-items:start"><div class="n">${i+1}</div><div><div class="t">${esc(keyName(o.k))} <span class="xs muted">${keyCode(o.k)}</span></div>${b.map(q=>qItem(q,'_',false,true)).join('')}</div><div class="pc">${chip(o.pct,o.pct+'%')}</div></div>`}).join('')}</div></div>`;
-  h+=`<div class="card mt"><div class="card-h"><div><h2>Targeted homework groups</h2><p class="hint">Students under 50% on a ${hasLessons(a)?'lesson':'topic'}, with three questions to set. A student can be in more than one group.</p></div></div><div class="card-b"><div class="grid c2">${groups.map(o=>{const K=kc(o);const b=bankFor(K.code,K.n,3,false,'_').items;return `<div class="focus" style="margin:0"><div class="fh"><div><h3>${esc(keyName(o.k))}</h3><div class="mod">${esc(keyCode(o.k))} · ${o.pct}% overall</div></div><span class="chip brand">${o.below.length} students</span></div><div style="padding:14px 20px 4px"><div class="xs strong muted" style="letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">Students</div><div class="row" style="gap:6px">${o.below.map(id=>`<span class="chip plain">${esc(stu(id).name)}</span>`).join('')}</div>${o.why?`<p class="xs muted" style="margin-top:10px">Most common reason: ${esc(STATIC.reasons[o.why[0]])}</p>`:''}</div><div class="qs">${b.map(q=>qItem(q,'_',false,true)).join('')}</div></div>`}).join('')}</div></div></div>`;
+  h+=`<div class="card"><div class="card-h"><div><h2>Whole-class starters</h2><p class="hint">The three lowest ${hasLessons(a)?'lessons':'topics'}, with two past-paper questions each. Questions already used in a Link Back or starter are pushed down the list.</p></div>${sheetBtns(whole.flatMap(o=>{const K=kc(o);return bankFor(K.code,K.n,2,false,'_').items.map(q=>q.id)}),a.name+' starters')}</div><div class="card-b">${whole.map((o,i)=>{const K=kc(o);const b=bankFor(K.code,K.n,2,false,'_').items;return `<div class="rk" style="grid-template-columns:28px minmax(0,1fr) 64px;align-items:start"><div class="n">${i+1}</div><div><div class="t">${esc(keyName(o.k))} <span class="xs muted">${keyCode(o.k)}</span></div>${b.map(q=>qItem(q,'_',false,true)).join('')}</div><div class="pc">${chip(o.pct,o.pct+'%')}</div></div>`}).join('')}</div></div>`;
+  h+=`<div class="card mt"><div class="card-h"><div><h2>Targeted homework groups</h2><p class="hint">Students under 50% on a ${hasLessons(a)?'lesson':'topic'}, with three questions to set. A student can be in more than one group.</p></div></div><div class="card-b"><div class="grid c2">${groups.map(o=>{const K=kc(o);const b=bankFor(K.code,K.n,3,false,'_').items;return `<div class="focus" style="margin:0"><div class="fh"><div><h3>${esc(keyName(o.k))}</h3><div class="mod">${esc(keyCode(o.k))} · ${o.pct}% overall</div></div><span class="chip brand">${o.below.length} students</span></div><div style="padding:14px 20px 4px"><div class="xs strong muted" style="letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">Students</div><div class="row" style="gap:6px">${o.below.map(id=>`<span class="chip plain">${esc(stu(id).name)}</span>`).join('')}</div>${o.why?`<p class="xs muted" style="margin-top:10px">Most common reason: ${esc(STATIC.reasons[o.why[0]])}</p>`:''}</div><div class="qs"><div class="qs-h">${sheetBtns(b.map(q=>q.id),keyName(o.k)+' homework')}</div>${b.map(q=>qItem(q,'_',false,true)).join('')}</div></div>`}).join('')}</div></div></div>`;
   return h;
 }
 function planText(){const {a,whole,groups}=planData();const L=o=>o.k.includes('-')?lessonLabel(o.k):modLabel(o.k);
@@ -476,14 +549,22 @@ function asmEditor(){
   <div class="tw"><table class="tbl"><thead><tr><th>Q</th><th>Part</th><th>Topic</th><th>Details</th><th class="r">Marks</th><th>SoL topic</th><th>SoL lesson</th><th>Textbook practice</th></tr></thead><tbody>${e.parts.map((p,i)=>ro?`<tr><td class="strong">${p.q}</td><td>${p.p}</td><td>${esc(p.topic)}</td><td class="small">${esc(p.detail)}</td><td class="r">${p.marks}</td><td class="small">${esc(modLabel(p.module))}</td><td class="small">${p.lessons.map(k=>esc(lessonLabel(k))).join('<br>')}</td><td class="small">${esc(p.textbook||'')}</td></tr>`:`<tr><td><input style="width:50px" data-pe="${i}" data-f="q" value="${esc(p.q)}" aria-label="Question"></td><td><input style="width:50px" data-pe="${i}" data-f="p" value="${esc(p.p)}" aria-label="Part"></td><td><input data-pe="${i}" data-f="topic" value="${esc(p.topic)}" aria-label="Topic"></td><td><input data-pe="${i}" data-f="detail" value="${esc(p.detail)}" aria-label="Details"></td><td><input style="width:64px" type="number" min="1" data-pe="${i}" data-f="marks" value="${p.marks}" aria-label="Marks"></td><td><select data-pe="${i}" data-f="module" aria-label="SoL topic">${modOpts(p.module)}</select></td><td><select data-pe="${i}" data-f="lesson" aria-label="SoL lesson">${lesOpts(p.module,p.lessons[0])}</select></td><td><input data-pe="${i}" data-f="textbook" value="${esc(p.textbook||'')}" aria-label="Textbook"></td></tr>`).join('')}</tbody></table></div>
   ${ro?`<button class="btn sec sm" data-act="closeed" style="margin-top:12px">Close</button>`:`<div class="row" style="margin-top:12px"><button class="btn sec sm" data-act="addpart">${IC.plus}Add a question part</button><span style="flex:1"></span><span id="na-err" class="err"></span><button class="btn sec" data-act="closeed">Cancel</button><button class="btn" data-act="saveasm">Save and open for entry</button></div>`}</div>`;
 }
-function tBank(){
+function tBank(){return bankBrowser(true)}
+function bankBrowser(isT){
   const counts={};BANK.forEach(b=>{if(b.mod)counts[b.mod]=(counts[b.mod]||0)+1});
+  if(!S.bankMod||!counts[S.bankMod])S.bankMod=Object.keys(counts).sort()[0];S.bankLes=S.bankLes||'all';S.bankSpec=S.bankSpec||'all';S.sel=S.sel||new Set();
   const m=MOD[S.bankMod];let items=BANK.filter(b=>b.mod===S.bankMod);if(S.bankLes!=='all')items=items.filter(b=>(b.les||[]).includes(+S.bankLes));
-  const h640=BANK.filter(b=>b.spec==='H640'&&b.mod).length,leg=BANK.filter(b=>b.spec!=='H640'&&b.mod).length;
-  return `<div class="ph"><div><div class="eyebrow">Question bank</div><h1>Past-paper questions by SoL topic</h1><p class="desc">From the tagged MEI banks. These feed every student's practice list and the revision plan.</p></div></div>
-  <div class="band"><div class="metric"><span class="lab">Tagged to the SoL</span><span class="val">${(h640+leg).toLocaleString()}</span><span class="sub">questions</span></div><div class="metric"><span class="lab">OCR MEI H640</span><span class="val">${h640}</span><span class="sub">2018 to 2024, all three papers</span></div><div class="metric"><span class="lab">Legacy MEI</span><span class="val">${leg.toLocaleString()}</span><span class="sub">C1 to C4, FP1, M1, M2, S1, S2</span></div><div class="metric"><span class="lab">SoL topics covered</span><span class="val">${Object.keys(counts).length}</span><span class="sub">of ${STATIC.modules.length}</span></div></div>
-  <div class="card"><div class="card-h"><div><h2>${esc(modLabel(S.bankMod))}</h2><p class="hint">${items.length} questions${S.bankLes!=='all'?' matched to this lesson':''}. Lesson matches come from each question's description.</p></div><div class="filters"><label class="fl"><span>SoL topic</span><select id="bk-mod">${STATIC.modules.filter(x=>counts[x.code]).map(x=>`<option value="${x.code}" ${x.code===S.bankMod?'selected':''}>${x.code} ${esc(x.name)} (${counts[x.code]})</option>`).join('')}</select></label>${m?.lessons?`<label class="fl"><span>Lesson</span><select id="bk-les"><option value="all">All lessons</option>${m.lessons.map((l,i)=>`<option value="${i+1}" ${S.bankLes==String(i+1)?'selected':''}>L${i+1} ${esc(l)}</option>`).join('')}</select></label>`:''}</div></div><div class="card-b">${items.slice(0,50).map(b=>qItem(b,'_',false,true)).join('')}${items.length>50?`<p class="xs muted" style="margin-top:10px">Showing the first 50.</p>`:''}</div></div>`;
+  if(S.bankSpec==='H640')items=items.filter(b=>b.spec==='H640');else if(S.bankSpec==='old')items=items.filter(b=>b.spec!=='H640');
+  items.sort((x,y)=>(x.spec==='H640'?0:1)-(y.spec==='H640'?0:1)||x.i-y.i);
+  const h640=BANK.filter(b=>b.spec==='H640'&&b.mod).length,leg=BANK.filter(b=>b.spec!=='H640'&&b.mod).length,withPdf=BANK.filter(b=>hasQ(b.id)).length,withMs=BANK.filter(b=>hasM(b.id)).length;
+  const sel=[...S.sel];const shown=items.filter(b=>hasQ(b.id));const allOn=shown.length&&shown.every(b=>S.sel.has(b.id));
+  const row=b=>{const on=S.sel.has(b.id);const ok=hasQ(b.id);return `<div class="q ${on?'picked':''}">${ok?`<input type="checkbox" data-act="bsel" data-q="${b.id}" ${on?'checked':''} aria-label="Add ${esc(bankSrc(b))} to the sheet">`:'<span></span>'}<div><div class="src"><span class="sp">${bankSpec(b)}</span> · ${esc(bankSrc(b))}${b.marks?` · ${b.marks} marks`:''}${isT&&b.used?` · used in ${esc(b.used)}`:''}${ok?'':' · <span class="muted">paper not in the bank yet</span>'}${ok&&!hasM(b.id)?' · <span class="muted">no mark scheme</span>':''}</div><div class="d mj">${esc(b.desc)}</div>${ok?`<div class="qa">${sheetBtns([b.id],bankSrc(b).replace(/ · /g,' '),true)}</div>`:''}</div></div>`};
+  return `<div class="ph"><div><div class="eyebrow">Question bank</div><h1>${isT?'Past-paper questions by SoL topic':'Find past-paper questions'}</h1><p class="desc">${isT?'Tick questions to build a starter, homework or test. The PDF uses the real exam paper, and the mark scheme comes as a separate PDF.':'Pick a topic, tick the questions you want and print them. Check your answers with the mark scheme PDF after.'}</p></div></div>
+  ${isT?`<div class="band"><div class="metric"><span class="lab">Tagged to the SoL</span><span class="val">${(h640+leg).toLocaleString()}</span><span class="sub">questions</span></div><div class="metric"><span class="lab">Question PDFs</span><span class="val">${withPdf.toLocaleString()}</span><span class="sub">cut from the exam papers</span></div><div class="metric"><span class="lab">Mark schemes</span><span class="val">${withMs.toLocaleString()}</span><span class="sub">cut from the published schemes</span></div><div class="metric"><span class="lab">SoL topics covered</span><span class="val">${Object.keys(counts).length}</span><span class="sub">of ${STATIC.modules.length}</span></div></div>`:''}
+  <div class="selbar ${sel.length?'on':''}"><div><b>${sel.length}</b> question${sel.length===1?'':'s'} picked${(()=>{const mk=BANK.filter(b=>S.sel.has(b.id)).reduce((t,b)=>t+(+b.marks||0),0);return mk?` · ${mk} mark${mk===1?'':'s'} on the current-spec questions`:''})()}</div><div class="row" style="gap:8px;flex-wrap:wrap">${sel.length?sheetBtns(sel,isT?'Question sheet':'My questions')+`<button class="btn sec sm" data-act="bclear">Clear</button>`:'<span class="small muted">Tick questions below to build a sheet</span>'}</div></div>
+  <div class="card"><div class="card-h"><div><h2>${esc(modLabel(S.bankMod))}</h2><p class="hint">${items.length} questions${S.bankLes!=='all'?' matched to this lesson':''}.</p></div><div class="filters"><label class="fl"><span>SoL topic</span><select id="bk-mod">${STATIC.modules.filter(x=>counts[x.code]).map(x=>`<option value="${x.code}" ${x.code===S.bankMod?'selected':''}>${x.code} ${esc(x.name)} (${counts[x.code]})</option>`).join('')}</select></label>${m?.lessons?`<label class="fl"><span>Lesson</span><select id="bk-les"><option value="all">All lessons</option>${m.lessons.map((l,i)=>`<option value="${i+1}" ${S.bankLes==String(i+1)?'selected':''}>L${i+1} ${esc(l)}</option>`).join('')}</select></label>`:''}<label class="fl"><span>Papers</span><select id="bk-spec"><option value="all" ${S.bankSpec==='all'?'selected':''}>All</option><option value="H640" ${S.bankSpec==='H640'?'selected':''}>Current spec (H640)</option><option value="old" ${S.bankSpec==='old'?'selected':''}>Legacy MEI</option></select></label>${shown.length?`<button class="btn sec sm" data-act="bselall" data-on="${allOn?0:1}">${allOn?'Untick all':'Tick all shown'}</button>`:''}</div></div><div class="card-b">${items.slice(0,S.bankMore?1000:60).map(row).join('')}${items.length>60&&!S.bankMore?`<button class="btn sec sm" data-act="bmore" style="margin-top:12px">Show all ${items.length}</button>`:''}</div></div>`;
 }
+
 
 // ================= data loading =================
 async function fetchAll(make){let out=[],from=0;const size=1000;for(;;){const {data,error}=await make().range(from,from+size-1);if(error)throw error;out=out.concat(data||[]);if(!data||data.length<size)break;from+=size}return out}
@@ -531,7 +612,7 @@ function navBtn(act,k,cur,icon,label,badge){return `<button data-act="${act}" da
 function sidebar(){
   let nav='',me='';
   if(ROLE!=='teacher'){const s=stu(ME.id);const todo=openFor(s.id).filter(a=>!respMap(a.id)[s.id]&&a.status==='open').length;
-    nav=`<div class="sec">My maths</div>${navBtn('stab','home',S.stab,IC.home,'Overview')}${navBtn('stab','record',S.stab,IC.edit,'Record results',todo)}${navBtn('stab','results',S.stab,IC.results,'My results')}${navBtn('stab','progress',S.stab,IC.trend,'Progress')}${navBtn('stab','practice',S.stab,IC.book,'Practice')}`;
+    nav=`<div class="sec">My maths</div>${navBtn('stab','home',S.stab,IC.home,'Overview')}${navBtn('stab','record',S.stab,IC.edit,'Record results',todo)}${navBtn('stab','results',S.stab,IC.results,'My results')}${navBtn('stab','progress',S.stab,IC.trend,'Progress')}${navBtn('stab','practice',S.stab,IC.book,'Practice')}${navBtn('stab','bank',S.stab,IC.bank,'Question bank')}`;
     me=`<div class="me"><div class="avatar">${initials(s.name)}</div><div><div class="n">${esc(s.name)}</div><div class="r">${esc(s.cls||'No class')}</div></div><button data-act="signout" aria-label="Sign out" title="Sign out">${IC.out}</button></div>`;
   }else{
     nav=`<div class="sec">Analysis</div>${navBtn('ttab','report',S.ttab,IC.report,'Assessment report')}${navBtn('ttab','time',S.ttab,IC.trend,'Trends over time')}${navBtn('ttab','students',S.ttab,IC.users,'Students')}${navBtn('ttab','lessons',S.ttab,IC.layers,'SoL coverage')}
@@ -559,7 +640,12 @@ async function refresh(msg){await loadData();if(msg)toast(msg);render()}
 
 document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-act]');if(!t)return;const act=t.dataset.act;
-  if(act==='done'||act==='archive'||act==='status'||act==='movecls')return;
+  if(act==='done'||act==='archive'||act==='status'||act==='movecls'||act==='bsel')return;
+  if(act==='qpdf'){if(t.disabled)return;t.disabled=true;try{await makeSheet(t.dataset.ids.split(','),t.dataset.kind,t.dataset.title||'Practice')}catch(err){console.error(err);toast("Couldn't make the PDF. Try again.")}t.disabled=false;return}
+  if(act==='bclear'){S.sel=new Set()}
+  else if(act==='bselall'){const on=t.dataset.on==='1';document.querySelectorAll('[data-act="bsel"]').forEach(x=>{on?S.sel.add(x.dataset.q):S.sel.delete(x.dataset.q)})}
+  else if(act==='bmore'){S.bankMore=true}
+  else
   if(act==='authtab'){S.authTab=t.dataset.k}
   else if(act==='stab'){S.stab=t.dataset.k;top0()}
   else if(act==='ttab'){S.ttab=t.dataset.k;S.tStudent=null;S.editing=null;top0()}
@@ -600,6 +686,7 @@ document.addEventListener('change',async e=>{const t=e.target;
   if(t.dataset.act==='done'){const q=t.dataset.q;t.closest('.q').classList.toggle('done',t.checked);
     const r=t.checked?await sb.from('practice_done').upsert({student_id:ME.id,question_id:q}):await sb.from('practice_done').delete().eq('student_id',ME.id).eq('question_id',q);
     if(r.error){toast("Couldn't save that. Try again.");t.checked=!t.checked;t.closest('.q').classList.toggle('done',t.checked)}else{t.checked?DB.done.add(q):DB.done.delete(q)}return}
+  if(t.dataset.act==='bsel'){S.sel=S.sel||new Set();t.checked?S.sel.add(t.dataset.q):S.sel.delete(t.dataset.q);const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(t.dataset.act==='status'){const {error}=await sb.from('assessments').update({status:t.value}).eq('id',t.dataset.aid);if(error){toast("Couldn't change the status");return}await refresh('Status updated');return}
   if(t.dataset.act==='archive'){const {error}=await sb.from('classes').update({archived:!t.checked}).eq('id',t.dataset.c);if(error){toast("Couldn't update the class");return}await refresh();return}
   if(t.dataset.act==='movecls'){const {error}=await sb.from('profiles').update({class_id:t.value||null}).eq('id',t.dataset.sid);if(error){toast("Couldn't move the student");return}await refresh('Class updated');return}
@@ -607,8 +694,9 @@ document.addEventListener('change',async e=>{const t=e.target;
   else if(t.id==='t-cls'){S.cls=t.value}
   else if(t.id==='rec-aid'){S.recAid=t.value;DRAFT=null}
   else if(t.id==='res-aid'){S.sAid=t.value}
-  else if(t.id==='bk-mod'){S.bankMod=t.value;S.bankLes='all'}
+  else if(t.id==='bk-mod'){S.bankMod=t.value;S.bankLes='all';S.bankMore=false}
   else if(t.id==='bk-les'){S.bankLes=t.value}
+  else if(t.id==='bk-spec'){S.bankSpec=t.value}
   else if(t.dataset.pe!==undefined&&t.dataset.f==='module'){readEditor();S.editing.parts[+t.dataset.pe].lessons=[]}
   else return;
   save();render();

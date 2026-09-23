@@ -374,6 +374,23 @@ mjx-container{font-size:104%!important}
   .dock{padding:12px 16px;gap:16px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.pbtns{display:inline-flex;gap:6px;flex-wrap:wrap}
+.btn.xs{padding:3px 9px;font-size:12px;gap:5px;border-radius:6px}
+.btn.xs svg{width:13px;height:13px}
+.btn[disabled]{opacity:.55;cursor:progress}
+.q .qa{margin-top:7px}
+.qs-h{display:flex;justify-content:flex-end;padding:10px 0 4px}
+.q.picked{background:color-mix(in srgb,var(--brand) 6%,transparent);border-radius:6px}
+.selbar{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line-2);border-radius:10px;padding:10px 14px;margin-bottom:16px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+.selbar.on{border-color:var(--brand)}
+.pbtns .btn{display:inline-flex;flex-direction:row;width:auto}.pbtns .btn svg{flex:none}
+@media (max-width:900px){
+  .selbar{top:58px}
+  .card-h{flex-wrap:wrap}
+  .card-h .filters{width:100%}
+  .filters .fl{flex:1 1 100%;min-width:0}
+  .filters select{width:100%;max-width:100%;min-width:0}
+}
 </style>
 <script>window.MathJax={tex:{inlineMath:[['$','$']]},svg:{fontCache:'global'},startup:{typeset:false}};</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg-full.min.js" async></script>
@@ -384,6 +401,7 @@ mjx-container{font-size:104%!important}
 <script src="config.js"></script>
 <script src="supabase.js"></script>
 <script src="data.js"></script>
+<script src="qindex.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
