@@ -522,8 +522,8 @@ function teacherLogin(){
    <h1>Staff area.<br><em>Reports and planning.</em></h1>
    <p>Assessment reports, trends over time, SoL coverage and revision planning for the Maths department. Students can't see this area.</p>
    <div class="feat"><div>${IC.report}<span><b>Assessment reports</b>Question, lesson and class analysis for every assessment.</span></div><div>${IC.plan}<span><b>Revision planning</b>Starters and homework groups built from the results.</span></div></div></div>
-   <div class="formp"><div class="box"><div class="eyebrow">Staff only</div><h2>Teacher sign in</h2><p class="lead">Enter the staff password to see the reports.</p>
-   <form id="tlogin" novalidate><div class="field"><label for="tl-pw">Staff password</label><input id="tl-pw" type="password" autocomplete="current-password"></div>
+   <div class="formp"><div class="box"><div class="eyebrow">Staff only</div><h2>Teacher sign in</h2><p class="lead">Sign in with your staff account.</p>
+   <form id="tlogin" novalidate><div class="field"><label for="tl-email">Email</label><input id="tl-email" type="email" autocomplete="username" placeholder="name@aums.ac.uk"></div><div class="field"><label for="tl-pw">Password</label><input id="tl-pw" type="password" autocomplete="current-password"></div>
    <div id="tl-err" class="err" role="alert" style="margin-bottom:10px"></div><button class="btn" type="submit" ${S.busy?'disabled':''}>${S.busy?'Signing in…':'Sign in'}</button></form>
    <p class="small muted" style="margin-top:18px;text-align:center">Not a teacher? <a class="linkbtn" href="#">Go to the student sign in</a></p></div></div></div>`;
 }
@@ -537,7 +537,7 @@ function sidebar(){
     nav=`<div class="sec">Analysis</div>${navBtn('ttab','report',S.ttab,IC.report,'Assessment report')}${navBtn('ttab','time',S.ttab,IC.trend,'Trends over time')}${navBtn('ttab','students',S.ttab,IC.users,'Students')}${navBtn('ttab','lessons',S.ttab,IC.layers,'SoL coverage')}
     <div class="sec">Action</div>${navBtn('ttab','plan',S.ttab,IC.plan,'Revision plan')}
     <div class="sec">Admin</div>${navBtn('ttab','setup',S.ttab,IC.settings,'Classes and assessments')}${navBtn('ttab','bank',S.ttab,IC.bank,'Question bank')}`;
-    me=`<div class="me"><div class="avatar">MS</div><div><div class="n">Maths staff</div><div class="r">Teacher</div></div><button data-act="signout" aria-label="Sign out" title="Sign out">${IC.out}</button></div>`;
+    me=`<div class="me"><div class="avatar">${initials(ME.full_name||ME.email)}</div><div><div class="n">${esc(ME.full_name||ME.email)}</div><div class="r">Teacher</div></div><button data-act="signout" aria-label="Sign out" title="Sign out">${IC.out}</button></div>`;
   }
   return `<aside class="side"><div class="logo"><img src="${LOGO}" alt="Aston University Mathematics School"><div class="prod">Assessment Tracker</div></div><nav class="nav" aria-label="Main">${nav}</nav>${me}</aside>`;
 }
@@ -634,9 +634,9 @@ document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target
   if(f.id==='signin'){const email=v('si-email').toLowerCase(),pw=document.getElementById('si-pw').value;if(!email||!pw)return setErr('si-err','Enter your email and password.');
     f.querySelector('button').disabled=true;const {error}=await sb.auth.signInWithPassword({email,password:pw});
     if(error){f.querySelector('button').disabled=false;return setErr('si-err',"That email and password don't match. Check them and try again.")}return}
-  if(f.id==='tlogin'){const pw=document.getElementById('tl-pw').value;if(!pw)return setErr('tl-err','Enter the staff password.');f.querySelector('button').disabled=true;
-    const {error}=await sb.auth.signInWithPassword({email:CFG.staffEmail,password:pw});
-    if(error){f.querySelector('button').disabled=false;const i=document.getElementById('tl-pw');i.value='';i.focus();return setErr('tl-err',"That password isn't right.")}return}
+  if(f.id==='tlogin'){const em=v('tl-email').toLowerCase()||CFG.staffEmail,pw=document.getElementById('tl-pw').value;if(!pw)return setErr('tl-err','Enter your password.');f.querySelector('button').disabled=true;
+    const {error}=await sb.auth.signInWithPassword({email:em,password:pw});
+    if(error){f.querySelector('button').disabled=false;const i=document.getElementById('tl-pw');i.value='';i.focus();return setErr('tl-err',"That email and password don't match.")}return}
   if(f.id==='newpw'){const pw=document.getElementById('np-pw').value;if(pw.length<8)return setErr('np-err','Your password needs at least 8 characters.');
     const {error}=await sb.auth.updateUser({password:pw});if(error)return setErr('np-err','Could not save the new password: '+error.message);S.recovery=false;toast('Password saved');const {data}=await sb.auth.getSession();startSession(data.session);return}
   if(f.id==='newclass'){const n=v('nc-name').toUpperCase(),y=+v('nc-y'),tt=v('nc-t');

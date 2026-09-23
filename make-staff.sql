@@ -1,5 +1,5 @@
--- Run AFTER you have added the staff user in Supabase (Authentication > Users > Add user),
--- with email maths.staff@aums.ac.uk and "Auto Confirm User" ticked.
-update public.profiles set role = 'teacher', full_name = 'Maths staff', class_id = null
-where email = 'maths.staff@aums.ac.uk';
+-- Makes a staff account a teacher. Change the email to the account you want to promote.
+-- The account must already exist (Supabase > Authentication > Users > Add user).
+update public.profiles set role = 'teacher', class_id = null
+where email = 'mark.adams@aums.ac.uk';
 select email, role from public.profiles where role = 'teacher';

@@ -19,7 +19,7 @@ The site runs on GitHub Pages. The data is stored in Supabase (project `aums-tra
 ## How the logins work
 
 - **Students** create an account with their @aums.ac.uk email and pick their class. They can only ever see their own results. Class averages come from a database function that returns totals only, never names.
-- **Staff** go to the page with `#staff` on the end of the address and enter the staff password. That signs in to the shared account `maths.staff@aums.ac.uk`, which has the teacher role.
+- **Staff** go to the page with `#staff` on the end of the address and sign in with a staff account. Mark's account (mark.adams@aums.ac.uk) is the first teacher. To add another teacher, create them in Supabase (Authentication > Users > Add user) and run `make-staff.sql` with their email.
 - The security is enforced by the database (row level security), not by the page. A student who looks at the page source still can't read anyone else's data.
 
 ## Common jobs
@@ -29,4 +29,4 @@ The site runs on GitHub Pages. The data is stored in Supabase (project `aums-tra
 - **Close an assessment:** change its status to Closed. Students can then see their results but can't change them.
 - **Student picked the wrong class:** Staff area > Classes and assessments > Students, then change the class.
 - **Student forgot their password:** they use "Forgotten your password?" on the sign-in page. Supabase's free email only sends a few emails an hour. If that isn't enough, delete their account in Supabase (Authentication > Users) and they sign up again. Their old results go with it.
-- **Change the staff password:** Supabase > Authentication > Users > maths.staff@aums.ac.uk > Reset password.
+- **Change a staff password:** Supabase > Authentication > Users, find the account, then send a password recovery email.

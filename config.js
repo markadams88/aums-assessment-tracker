@@ -3,5 +3,5 @@
 window.AUMS_CONFIG = {
   url: 'https://rfjxvlnbhhbdfdrygren.supabase.co',
   anonKey: 'sb_publishable_zuGu8iVvCV1WYBa9nnREEw_CvF7pIVH',
-  staffEmail: 'maths.staff@aums.ac.uk'
+  staffEmail: 'mark.adams@aums.ac.uk'
 };
