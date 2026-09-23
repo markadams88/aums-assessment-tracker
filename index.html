@@ -391,6 +391,23 @@ mjx-container{font-size:104%!important}
   .filters .fl{flex:1 1 100%;min-width:0}
   .filters select{width:100%;max-width:100%;min-width:0}
 }
+.tgl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tg{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);border-radius:999px;padding:5px 12px;font-weight:700;font-size:13px;cursor:pointer}
+.tg svg{width:12px;height:12px}
+.tg[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:#fff}
+.tg:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.tgx{font-size:12.5px;color:var(--muted);margin-left:6px}
+.up{letter-spacing:.08em;text-transform:uppercase}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.cmbt th.ck,.cmbt td.ck{width:30px;padding-right:0}
+.cmbt input[type=checkbox]{width:17px;height:17px;accent-color:var(--brand-2)}
+.cmbt tr.picked td:not(.cell){background:color-mix(in srgb,var(--brand) 6%,transparent)}
+.cmbt tr.sub td{font-size:12.5px}
+.exp{border:0;background:none;cursor:pointer;color:var(--muted);width:20px;padding:0;font-size:13px}
+.exp0{display:inline-block;width:20px}
+.fl.inl{flex-direction:row;align-items:center;gap:6px}
+.fl.inl select{padding:5px 26px 5px 10px;min-width:64px}
+@media (max-width:900px){.fl.inl{flex:0 0 auto!important}.fl.inl select{width:auto!important}}
 </style>
 <script>window.MathJax={tex:{inlineMath:[['$','$']]},svg:{fontCache:'global'},startup:{typeset:false}};</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg-full.min.js" async></script>

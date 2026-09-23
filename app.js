@@ -152,6 +152,55 @@ async function makeSheet(ids,kind,title){
 function sheetBtns(ids,title,small){ids=ids.filter(hasQ);if(!ids.length)return '';const cls=small?'btn sec xs':'btn sec sm';const t=esc(title);
   return `<span class="pbtns"><button class="${cls}" data-act="qpdf" data-kind="q" data-ids="${ids.join(',')}" data-title="${t}">${IC.pages} Questions PDF</button><button class="${cls}" data-act="qpdf" data-kind="m" data-ids="${ids.join(',')}" data-title="${t}">${IC.check||IC.pages} Mark scheme</button></span>`}
 
+// ---------- combined results across chosen assessments ----------
+// S.cmbSel: Set of assessment ids switched on (null = all). S.cmbOpen: Set of topic codes expanded. S.topicSel: Set of topic/lesson keys ticked for export.
+function cmbAssessments(pool){const on=S.cmbSel;return on?pool.filter(a=>on.has(a.id)):pool}
+function cmbToggles(pool){const on=S.cmbSel;S.cmbPool=pool.map(a=>a.id);
+  return `<div class="tgl" role="group" aria-label="Assessments to include">${pool.map(a=>{const p=!on||on.has(a.id);return `<button type="button" class="tg" data-act="cmbtog" data-aid="${a.id}" aria-pressed="${p}">${p?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>':''}<span>${esc(a.id)}</span></button>`}).join('')}
+  <span class="tgx"><button type="button" class="linkbtn" data-act="cmball">All</button> · <button type="button" class="linkbtn" data-act="cmbnone">None</button></span></div>`}
+// add up got/max for each topic (and lesson) over the chosen assessments
+function cmbStats(as,statFn){const T={};
+  as.forEach(a=>{const gm=statFn(a,'module'),gl=statFn(a,'lesson');
+    Object.values(gm).forEach(o=>{const t=T[o.k]=T[o.k]||{k:o.k,got:0,max:0,in:[],les:{}};if(o.max){t.got+=o.got;t.max+=o.max;t.in.push(a.id)}});
+    Object.values(gl).forEach(o=>{const code=o.k.split('-')[0];const t=T[code]=T[code]||{k:code,got:0,max:0,in:[],les:{}};const l=t.les[o.k]=t.les[o.k]||{k:o.k,got:0,max:0,in:[]};if(o.max){l.got+=o.got;l.max+=o.max;l.in.push(a.id)}})});
+  Object.values(T).forEach(t=>{t.pct=pct(t.got,t.max);Object.values(t.les).forEach(l=>l.pct=pct(l.got,l.max))});return T}
+const modOrder=c=>{const i=STATIC.modules.findIndex(m=>m.code===c);return i<0?999:i};
+// cols: [{name, stat:(a,by)=>groupStats-like}] first col is the main one
+function combinedCard({pool,cols,sid,isT,title,hint}){
+  if(!pool.length)return '';
+  const as=cmbAssessments(pool);
+  const data=cols.map(c=>cmbStats(as,c.stat));const main=data[0];
+  let keys=Object.keys(main).filter(k=>main[k].max);
+  const sort=S.cmbSort||'sol';
+  keys.sort(sort==='weak'?(x,y)=>main[x].pct-main[y].pct:(x,y)=>modOrder(x)-modOrder(y));
+  const tot=keys.reduce((o,k)=>{o.g+=main[k].got;o.m+=main[k].max;return o},{g:0,m:0});
+  S.topicSel=S.topicSel||new Set();S.cmbOpen=S.cmbOpen||new Set();
+  const tick=(k,lab)=>`<input type="checkbox" data-act="tsel" data-k="${esc(k)}" ${S.topicSel.has(k)?'checked':''} aria-label="Pick ${esc(lab)} for export">`;
+  const rowsHtml=keys.map(k=>{const t=main[k];const m=MOD[k];const open=S.cmbOpen.has(k);const lk=sortLessons(Object.keys(t.les).filter(x=>t.les[x].max));
+    let r=`<tr class="${S.topicSel.has(k)?'picked':''}"><td class="ck">${tick(k,m?.name||k)}</td><td>${lk.length?`<button type="button" class="exp" data-act="cmbopen" data-k="${esc(k)}" aria-expanded="${open}" aria-label="Show lessons">${open?'▾':'▸'}</button>`:'<span class="exp0"></span>'}<span class="strong">${esc(m?.name||k)}</span>${m?.fm?'<span class="fm">FM</span>':''} <span class="xs muted">${esc(k)}</span></td>
+      ${data.map(d=>cellTd(d[k]&&d[k].max?d[k].pct:null)).join('')}
+      <td class="r small">${t.got}/${t.max}</td><td class="small">${t.in.map(x=>`<span class="chip plain">${esc(x)}</span>`).join(' ')}</td></tr>`;
+    if(open)r+=lk.map(l=>{const o=t.les[l];const L=lessonKey(l);return `<tr class="sub ${S.topicSel.has(l)?'picked':''}"><td class="ck">${tick(l,L.name)}</td><td style="padding-left:34px" class="small">L${L.n} ${esc(L.name)}</td>${data.map(d=>{const x=d[k]?.les?.[l];return cellTd(x&&x.max?x.pct:null)}).join('')}<td class="r xs muted">${o.got}/${o.max}</td><td class="xs muted">${o.in.join(', ')}</td></tr>`}).join('');
+    return r}).join('');
+  // export bar
+  const per=+(S.cmbPer||3);
+  const picked=[...S.topicSel].filter(k=>{const c=k.split('-')[0];return main[c]});
+  const ids=[...new Set(picked.flatMap(k=>{const L=k.includes('-')?lessonKey(k):null;return bankFor(L?L.code:k,L?L.n:null,per,!isT,sid).items.map(b=>b.id)}))];
+  const weak=keys.filter(k=>main[k].pct<70);
+  const bar=`<div class="selbar ${picked.length?'on':''}"><div><b>${picked.length}</b> topic${picked.length===1?'':'s'} or lesson${picked.length===1?'':'s'} picked${picked.length?` · ${ids.filter(hasQ).length} questions`:''}</div>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><label class="fl inl"><span>Per topic</span><select id="cmb-per">${[2,3,4,6].map(n=>`<option ${n===per?'selected':''}>${n}</option>`).join('')}</select></label>
+    ${weak.length?`<button class="btn sec sm" data-act="tselweak" data-keys="${esc(weak.join('|'))}">Tick all under 70%</button>`:''}
+    ${picked.length?sheetBtns(ids,isT?'Topic questions':'My topic questions')+`<button class="btn sec sm" data-act="tclear">Clear</button>`:''}</div></div>`;
+  return `<div class="card cmb"><div class="card-h"><div><h2>${title}</h2><p class="hint">${hint} ${as.length?`Using ${as.length} of ${pool.length} assessment${pool.length===1?'':'s'}.`:''}</p></div>
+    <div class="filters"><label class="fl"><span>Order</span><select id="cmb-sort"><option value="sol" ${sort==='sol'?'selected':''}>Scheme of learning</option><option value="weak" ${sort==='weak'?'selected':''}>Weakest first</option></select></label></div></div>
+    <div class="card-b"><div class="xs strong muted up" style="margin-bottom:6px">Assessments to include</div>${cmbToggles(pool)}
+    ${!as.length?'<div class="empty" style="margin-top:14px">Switch on at least one assessment.</div>':`
+    <div class="band" style="margin:14px 0"><div class="metric"><span class="lab">Combined</span><span class="val" style="color:var(--${st(pct(tot.g,tot.m))})">${pct(tot.g,tot.m)}%</span><span class="sub">${tot.g} of ${tot.m} marks</span></div><div class="metric"><span class="lab">Topics</span><span class="val">${keys.length}</span><span class="sub">in these papers</span></div><div class="metric"><span class="lab">Under 70%</span><span class="val">${weak.length}</span><span class="sub">topics</span></div></div>
+    ${bar}
+    <div class="tw"><table class="tbl cmbt"><thead><tr><th class="ck"><span class="sr">Pick</span></th><th>SoL topic</th>${cols.map(c=>`<th class="c">${esc(c.name)}</th>`).join('')}<th class="r">Marks</th><th>Assessed in</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+    <p class="xs muted" style="margin-top:10px">Tick topics or lessons (open a topic with ▸ to see its lessons), then make one PDF of past-paper questions for all of them.${isT?'':' Questions you have already ticked as done are left out.'}</p>`}</div></div>`;
+}
+
 // ================= icons =================
 const I=(d,extra='')=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${d}</svg>`;
 const IC={
@@ -411,6 +460,8 @@ function sProgress(me){
   const mods=[...new Set(as.flatMap(a=>a.parts.map(p=>p.module)))].sort((x,y)=>STATIC.modules.findIndex(m=>m.code===x)-STATIC.modules.findIndex(m=>m.code===y));
   let h=`<div class="ph"><div><div class="eyebrow">Progress over time</div><h1>How each topic is going</h1><p class="desc">Topics come back in later assessments, so each line shows whether learning has stuck.</p></div></div>`;
   if(mine.length<2)h+=`<div class="note">${IC.info}<div><b>Your trends build up after each assessment.</b> With one assessment you see a single point per topic.</div></div>`;
+  h+=combinedCard({pool:as,cols:[{name:'You',stat:(a,by)=>groupStats(a,[me.id],by)},{name:me.cls+' avg',stat:(a,by)=>classGroup(a,me.cls,by)}],sid:me.id,isT:false,title:'Your combined results by topic',hint:'All your marks on each topic added up across the assessments you switch on. The charts below follow the same switches.'})+'<div class="mt"></div>';
+  {const f=cmbAssessments(as);if(!f.length)return h;as.length=0;as.push(...f);labels.length=0;labels.push(...f.map(a=>a.id))}
   h+=`<div class="card"><div class="card-h"><div><h2>Topics</h2><p class="hint">Your percentage each time the topic was assessed, against the ${me.cls} average.</p></div></div><div class="card-b"><div class="sm">`;
   mods.forEach(code=>{const you=as.map(a=>{const g=groupStats(a,[me.id],'module')[code];return g&&g.max?g.pct:null});const cl=as.map(a=>{const g=classGroup(a,me.cls,'module')[code];return g&&g.max?g.pct:null});
     if(you.every(v=>v==null))return;const lastV=[...you].reverse().find(v=>v!=null);
@@ -476,11 +527,15 @@ function tReport(){
   return h;
 }
 function tTime(){
-  const as=assessments().filter(a=>Object.keys(respMap(a.id)).length);
-  const mods=[...new Set(as.flatMap(a=>a.parts.map(p=>p.module)))].sort((x,y)=>STATIC.modules.findIndex(m=>m.code===x)-STATIC.modules.findIndex(m=>m.code===y));
+  const as0=assessments().filter(a=>Object.keys(respMap(a.id)).length);
+  const mods=[...new Set(as0.flatMap(a=>a.parts.map(p=>p.module)))].sort((x,y)=>STATIC.modules.findIndex(m=>m.code===x)-STATIC.modules.findIndex(m=>m.code===y));
   let h=`<div class="ph"><div><div class="eyebrow">Trends over time</div><h1>Every topic, every assessment</h1><p class="desc">How each SoL topic has gone each time it has been assessed, for ${grpName()}.</p></div>${tFilters(false)}</div>`;
-  if(!as.length)return h+`<div class="empty">Trends appear once students start recording results.</div>`;
-  if(as.length<2)h+=`<div class="note">${IC.info}<div><b>Only one assessment has results so far.</b> Each column fills in as assessments come back, and topics revisited in later papers show whether learning has stuck.</div></div>`;
+  if(!as0.length)return h+`<div class="empty">Trends appear once students start recording results.</div>`;
+  if(as0.length<2)h+=`<div class="note">${IC.info}<div><b>Only one assessment has results so far.</b> Each column fills in as assessments come back, and topics revisited in later papers show whether learning has stuck.</div></div>`;
+  {const cl=S.cls==='all'?classes().filter(c=>sidsIn(c.id).length):[];
+   const cols=[{name:S.cls==='all'?'All':S.cls,stat:(a,by)=>groupStats(a,submitted(a.id,S.cls),by)}].concat(cl.map(c=>({name:c.id,stat:(a,by)=>groupStats(a,submitted(a.id,c.id),by)})));
+   h+=combinedCard({pool:as0,cols,sid:'_',isT:true,title:'Combined results by SoL topic',hint:`Every mark on each topic added up across the assessments you switch on, for ${grpName()}. The rest of this page follows the same switches.`})+'<div class="mt"></div>';}
+  const as=cmbAssessments(as0);if(!as.length)return h;
   h+=`<div class="card"><div class="card-h"><div><h2>Topic facility by assessment</h2><p class="hint">Percentage of available marks gained. A dot means the topic wasn't in that paper.</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>SoL topic</th>${as.map(a=>`<th class="c">${a.id}</th>`).join('')}<th class="r">Change</th></tr></thead><tbody>${mods.map(m=>{const v=as.map(a=>{const g=groupStats(a,submitted(a.id,S.cls),'module')[m];return g&&g.max?g.pct:null});const f=v.find(x=>x!=null),l=[...v].reverse().find(x=>x!=null),n=v.filter(x=>x!=null).length;const d=n>1?l-f:null;
     return `<tr><td><span class="strong">${esc(MOD[m]?.name||m)}</span>${MOD[m]?.fm?'<span class="fm">FM</span>':''} <span class="xs muted">${m}</span></td>${v.map(cellTd).join('')}<td class="r strong">${d==null?'<span class="muted">–</span>':`<span style="color:${d>=5?'var(--good)':d<=-5?'var(--bad)':'var(--muted)'}">${d>0?'▲ +':d<0?'▼ ':''}${d}</span>`}</td></tr>`}).join('')}</tbody></table></div></div>`;
   const cl=classes().filter(c=>sidsIn(c.id).length&&(S.cls==='all'||c.id===S.cls));
@@ -561,7 +616,7 @@ function bankBrowser(isT){
   const row=b=>{const on=S.sel.has(b.id);const ok=hasQ(b.id);return `<div class="q ${on?'picked':''}">${ok?`<input type="checkbox" data-act="bsel" data-q="${b.id}" ${on?'checked':''} aria-label="Add ${esc(bankSrc(b))} to the sheet">`:'<span></span>'}<div><div class="src"><span class="sp">${bankSpec(b)}</span> · ${esc(bankSrc(b))}${b.marks?` · ${b.marks} marks`:''}${isT&&b.used?` · used in ${esc(b.used)}`:''}${ok?'':' · <span class="muted">paper not in the bank yet</span>'}${ok&&!hasM(b.id)?' · <span class="muted">no mark scheme</span>':''}</div><div class="d mj">${esc(b.desc)}</div>${ok?`<div class="qa">${sheetBtns([b.id],bankSrc(b).replace(/ · /g,' '),true)}</div>`:''}</div></div>`};
   return `<div class="ph"><div><div class="eyebrow">Question bank</div><h1>${isT?'Past-paper questions by SoL topic':'Find past-paper questions'}</h1><p class="desc">${isT?'Tick questions to build a starter, homework or test. The PDF uses the real exam paper, and the mark scheme comes as a separate PDF.':'Pick a topic, tick the questions you want and print them. Check your answers with the mark scheme PDF after.'}</p></div></div>
   ${isT?`<div class="band"><div class="metric"><span class="lab">Tagged to the SoL</span><span class="val">${(h640+leg).toLocaleString()}</span><span class="sub">questions</span></div><div class="metric"><span class="lab">Question PDFs</span><span class="val">${withPdf.toLocaleString()}</span><span class="sub">cut from the exam papers</span></div><div class="metric"><span class="lab">Mark schemes</span><span class="val">${withMs.toLocaleString()}</span><span class="sub">cut from the published schemes</span></div><div class="metric"><span class="lab">SoL topics covered</span><span class="val">${Object.keys(counts).length}</span><span class="sub">of ${STATIC.modules.length}</span></div></div>`:''}
-  <div class="selbar ${sel.length?'on':''}"><div><b>${sel.length}</b> question${sel.length===1?'':'s'} picked${(()=>{const mk=BANK.filter(b=>S.sel.has(b.id)).reduce((t,b)=>t+(+b.marks||0),0);return mk?` · ${mk} mark${mk===1?'':'s'} on the current-spec questions`:''})()}</div><div class="row" style="gap:8px;flex-wrap:wrap">${sel.length?sheetBtns(sel,isT?'Question sheet':'My questions')+`<button class="btn sec sm" data-act="bclear">Clear</button>`:'<span class="small muted">Tick questions below to build a sheet</span>'}</div></div>
+  <div class="selbar ${sel.length?'on':''}"><div><b>${sel.length}</b> question${sel.length===1?'':'s'} picked${sel.length?` from ${new Set(BANK.filter(b=>S.sel.has(b.id)).map(b=>b.mod)).size} topic${new Set(BANK.filter(b=>S.sel.has(b.id)).map(b=>b.mod)).size===1?'':'s'}`:''}${(()=>{const mk=BANK.filter(b=>S.sel.has(b.id)).reduce((t,b)=>t+(+b.marks||0),0);return mk?` · ${mk} mark${mk===1?'':'s'} on the current-spec questions`:''})()}</div><div class="row" style="gap:8px;flex-wrap:wrap">${sel.length?sheetBtns(sel,isT?'Question sheet':'My questions')+`<button class="btn sec sm" data-act="bclear">Clear</button>`:'<span class="small muted">Tick questions below. Your ticks stay when you change topic, so you can build one sheet from several topics.</span>'}</div></div>
   <div class="card"><div class="card-h"><div><h2>${esc(modLabel(S.bankMod))}</h2><p class="hint">${items.length} questions${S.bankLes!=='all'?' matched to this lesson':''}.</p></div><div class="filters"><label class="fl"><span>SoL topic</span><select id="bk-mod">${STATIC.modules.filter(x=>counts[x.code]).map(x=>`<option value="${x.code}" ${x.code===S.bankMod?'selected':''}>${x.code} ${esc(x.name)} (${counts[x.code]})</option>`).join('')}</select></label>${m?.lessons?`<label class="fl"><span>Lesson</span><select id="bk-les"><option value="all">All lessons</option>${m.lessons.map((l,i)=>`<option value="${i+1}" ${S.bankLes==String(i+1)?'selected':''}>L${i+1} ${esc(l)}</option>`).join('')}</select></label>`:''}<label class="fl"><span>Papers</span><select id="bk-spec"><option value="all" ${S.bankSpec==='all'?'selected':''}>All</option><option value="H640" ${S.bankSpec==='H640'?'selected':''}>Current spec (H640)</option><option value="old" ${S.bankSpec==='old'?'selected':''}>Legacy MEI</option></select></label>${shown.length?`<button class="btn sec sm" data-act="bselall" data-on="${allOn?0:1}">${allOn?'Untick all':'Tick all shown'}</button>`:''}</div></div><div class="card-b">${items.slice(0,S.bankMore?1000:60).map(row).join('')}${items.length>60&&!S.bankMore?`<button class="btn sec sm" data-act="bmore" style="margin-top:12px">Show all ${items.length}</button>`:''}</div></div>`;
 }
 
@@ -589,7 +644,7 @@ async function startSession(session){
   if(!session){ROLE=null;ME=null;LOADED=false;await loadAnon();render();return}
   const {data,error}=await sb.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
   if(error||!data){ROLE=null;ME=null;await sb.auth.signOut();await loadAnon();render();return}
-  if(!ME||ME.id!==data.id){S.stab='home';S.sAid=null;S.recAid=null;S.tStudent=null;DRAFT=null}
+  if(!ME||ME.id!==data.id){S.stab='home';S.sAid=null;S.recAid=null;S.tStudent=null;DRAFT=null;S.cmbSel=null;S.topicSel=new Set();S.sel=new Set();S.cmbOpen=new Set()}
   ME=data;ROLE=data.role;
   if(ROLE!=='teacher'&&S.view==='staff'){await sb.auth.signOut();ROLE=null;ME=null;await loadAnon();render();setErr('tl-err','That account is not a staff account.');return}
   try{await loadData()}catch(e){console.error(e);document.getElementById('root').innerHTML=`<div class="content"><div class="empty">Couldn't load your data. Check your internet connection and refresh the page.</div></div>`;return}
@@ -642,6 +697,12 @@ document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-act]');if(!t)return;const act=t.dataset.act;
   if(act==='done'||act==='archive'||act==='status'||act==='movecls'||act==='bsel')return;
   if(act==='qpdf'){if(t.disabled)return;t.disabled=true;try{await makeSheet(t.dataset.ids.split(','),t.dataset.kind,t.dataset.title||'Practice')}catch(err){console.error(err);toast("Couldn't make the PDF. Try again.")}t.disabled=false;return}
+  if(act==='cmbtog'){const all=S.cmbPool||[];const on=S.cmbSel?new Set(S.cmbSel):new Set(all);const id=t.dataset.aid;on.has(id)?on.delete(id):on.add(id);S.cmbSel=on.size===all.length?null:on;const y=window.scrollY;render();window.scrollTo(0,y);return}
+  if(act==='cmball'||act==='cmbnone'){S.cmbSel=act==='cmball'?null:new Set();const y=window.scrollY;render();window.scrollTo(0,y);return}
+  if(act==='cmbopen'){S.cmbOpen=S.cmbOpen||new Set();const k=t.dataset.k;S.cmbOpen.has(k)?S.cmbOpen.delete(k):S.cmbOpen.add(k);const y=window.scrollY;render();window.scrollTo(0,y);return}
+  if(act==='tselweak'){S.topicSel=S.topicSel||new Set();t.dataset.keys.split('|').forEach(k=>S.topicSel.add(k));const y=window.scrollY;render();window.scrollTo(0,y);return}
+  if(act==='tclear'){S.topicSel=new Set();const y=window.scrollY;render();window.scrollTo(0,y);return}
+  if(act==='tsel')return;
   if(act==='bclear'){S.sel=new Set()}
   else if(act==='bselall'){const on=t.dataset.on==='1';document.querySelectorAll('[data-act="bsel"]').forEach(x=>{on?S.sel.add(x.dataset.q):S.sel.delete(x.dataset.q)})}
   else if(act==='bmore'){S.bankMore=true}
@@ -686,6 +747,8 @@ document.addEventListener('change',async e=>{const t=e.target;
   if(t.dataset.act==='done'){const q=t.dataset.q;t.closest('.q').classList.toggle('done',t.checked);
     const r=t.checked?await sb.from('practice_done').upsert({student_id:ME.id,question_id:q}):await sb.from('practice_done').delete().eq('student_id',ME.id).eq('question_id',q);
     if(r.error){toast("Couldn't save that. Try again.");t.checked=!t.checked;t.closest('.q').classList.toggle('done',t.checked)}else{t.checked?DB.done.add(q):DB.done.delete(q)}return}
+  if(t.dataset.act==='tsel'){S.topicSel=S.topicSel||new Set();t.checked?S.topicSel.add(t.dataset.k):S.topicSel.delete(t.dataset.k);const y=window.scrollY;render();window.scrollTo(0,y);return}
+  if(t.id==='cmb-per'||t.id==='cmb-sort'){if(t.id==='cmb-per')S.cmbPer=+t.value;else S.cmbSort=t.value;const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(t.dataset.act==='bsel'){S.sel=S.sel||new Set();t.checked?S.sel.add(t.dataset.q):S.sel.delete(t.dataset.q);const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(t.dataset.act==='status'){const {error}=await sb.from('assessments').update({status:t.value}).eq('id',t.dataset.aid);if(error){toast("Couldn't change the status");return}await refresh('Status updated');return}
   if(t.dataset.act==='archive'){const {error}=await sb.from('classes').update({archived:!t.checked}).eq('id',t.dataset.c);if(error){toast("Couldn't update the class");return}await refresh();return}
