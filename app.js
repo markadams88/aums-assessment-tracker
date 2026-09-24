@@ -674,10 +674,15 @@ async function loadAnon(){const {data}=await sb.from('classes').select('*').orde
 async function startSession(session){
   if(!session){ROLE=null;ME=null;LOADED=false;await loadAnon();render();return}
   const {data,error}=await sb.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
-  if(error||!data){ROLE=null;ME=null;await sb.auth.signOut();await loadAnon();render();return}
+  if(error){console.error(error);document.getElementById('root').innerHTML=`<div class="content"><div class="empty">Couldn't load your account. Check your internet connection and refresh the page.</div></div>`;return}
+  if(!data){ROLE=null;ME=null;await sb.auth.signOut({scope:'local'});await loadAnon();render();return}
   if(!ME||ME.id!==data.id){S.stab='home';S.sAid=null;S.recAid=null;S.tStudent=null;DRAFT=null;S.cmbSel=null;S.topicSel=new Set();S.sel=new Set();S.cmbOpen=new Set()}
   ME=data;ROLE=data.role;
-  if(ROLE!=='teacher'&&S.view==='staff'){await sb.auth.signOut();ROLE=null;ME=null;await loadAnon();render();setErr('tl-err','That account is not a staff account.');return}
+  if(ROLE!=='teacher'&&S.view==='staff'){
+    // only turn a student away if they used the staff form in this tab; never sign out because another tab signed in
+    if(S.staffAttempt){S.staffAttempt=false;await sb.auth.signOut({scope:'local'});ROLE=null;ME=null;await loadAnon();render();S.staffErr='That account is not a staff account. Students sign in on the student page.';render();return}
+    S.view='student';try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}
+  S.staffAttempt=false;
   try{await loadData()}catch(e){console.error(e);document.getElementById('root').innerHTML=`<div class="content"><div class="empty">Couldn't load your data. Check your internet connection and refresh the page.</div></div>`;return}
   render();
 }
@@ -691,7 +696,7 @@ function teacherLogin(){
    <div class="feat"><div>${IC.report}<span><b>Assessment reports</b>Question, lesson and class analysis for every assessment.</span></div><div>${IC.plan}<span><b>Revision planning</b>Starters and homework groups built from the results.</span></div></div></div>
    <div class="formp"><div class="box"><div class="eyebrow">Staff only</div><h2>Teacher sign in</h2><p class="lead">Sign in with your staff account.</p>
    <form id="tlogin" novalidate><div class="field"><label for="tl-email">Email</label><input id="tl-email" type="email" autocomplete="username" placeholder="name@aums.ac.uk"></div><div class="field"><label for="tl-pw">Password</label><input id="tl-pw" type="password" autocomplete="current-password"></div>
-   <div id="tl-err" class="err" role="alert" style="margin-bottom:10px"></div><button class="btn" type="submit" ${S.busy?'disabled':''}>${S.busy?'Signing in…':'Sign in'}</button></form>
+   <div id="tl-err" class="err" role="alert" style="margin-bottom:10px">${esc(S.staffErr||"")}</div><button class="btn" type="submit" ${S.busy?'disabled':''}>${S.busy?'Signing in…':'Sign in'}</button></form>
    <p class="small muted" style="margin-top:18px;text-align:center">Not a teacher? <a class="linkbtn" href="#">Go to the student sign in</a></p></div></div></div>`;
 }
 function navBtn(act,k,cur,icon,label,badge){return `<button data-act="${act}" data-k="${k}" ${cur===k?'aria-current="page"':''}>${icon}<span class="lbl">${label}</span>${badge?`<span class="badge">${badge}</span>`:''}</button>`}
@@ -741,7 +746,7 @@ document.addEventListener('click',async e=>{
   if(act==='authtab'){S.authTab=t.dataset.k}
   else if(act==='stab'){S.stab=t.dataset.k;top0()}
   else if(act==='ttab'){S.ttab=t.dataset.k;S.tStudent=null;S.editing=null;S.preview=t.dataset.k==='preview'?S.preview:null;if(t.dataset.k==='preview')S.stab=S.stab==='record'?'home':S.stab;top0()}
-  else if(act==='signout'){await sb.auth.signOut();DRAFT=null;S.tStudent=null;toast('Signed out');return}
+  else if(act==='signout'){await sb.auth.signOut({scope:'local'});DRAFT=null;S.tStudent=null;toast('Signed out');return}
   else if(act==='forgot'){const em=(document.getElementById('si-email')?.value||'').trim().toLowerCase();if(!/^[^@\s]+@aums\.ac\.uk$/.test(em)){setErr('si-err','Type your school email above first, then press "Forgotten your password?" again.');return}
     const {error}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname});setErr('si-err',error?"The reset email couldn't be sent just now. Ask your maths teacher for help.":'Check your school email for a link to reset your password.');return}
   else if(act==='record'){S.recAid=t.dataset.aid;S.stab='record';top0()}
@@ -818,9 +823,9 @@ document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target
   if(f.id==='signin'){const email=v('si-email').toLowerCase(),pw=document.getElementById('si-pw').value;if(!email||!pw)return setErr('si-err','Enter your email and password.');
     f.querySelector('button').disabled=true;const {error}=await sb.auth.signInWithPassword({email,password:pw});
     if(error){f.querySelector('button').disabled=false;return setErr('si-err',"That email and password don't match. Check them and try again.")}return}
-  if(f.id==='tlogin'){const em=v('tl-email').toLowerCase()||CFG.staffEmail,pw=document.getElementById('tl-pw').value;if(!pw)return setErr('tl-err','Enter your password.');f.querySelector('button').disabled=true;
+  if(f.id==='tlogin'){S.staffErr='';const em=v('tl-email').toLowerCase()||CFG.staffEmail,pw=document.getElementById('tl-pw').value;if(!pw)return setErr('tl-err','Enter your password.');f.querySelector('button').disabled=true;S.staffAttempt=true;
     const {error}=await sb.auth.signInWithPassword({email:em,password:pw});
-    if(error){f.querySelector('button').disabled=false;const i=document.getElementById('tl-pw');i.value='';i.focus();return setErr('tl-err',"That email and password don't match.")}return}
+    if(error){S.staffAttempt=false;f.querySelector('button').disabled=false;const i=document.getElementById('tl-pw');i.value='';i.focus();return setErr('tl-err',"That email and password don't match.")}return}
   if(f.id==='newpw'){const pw=document.getElementById('np-pw').value;if(pw.length<8)return setErr('np-err','Your password needs at least 8 characters.');
     const {error}=await sb.auth.updateUser({password:pw});if(error)return setErr('np-err','Could not save the new password: '+error.message);S.recovery=false;toast('Password saved');const {data}=await sb.auth.getSession();startSession(data.session);return}
   if(f.id==='newclass'){const n=v('nc-name').toUpperCase(),y=+v('nc-y'),tt=v('nc-t');
