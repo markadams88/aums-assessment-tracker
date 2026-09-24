@@ -239,7 +239,7 @@ function scoreRing(score,total,pot,avgv){
   <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="${sw}"/>
   <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--line)" stroke-width="1" />
   <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--pot)" stroke-width="${sw}" stroke-dasharray="${c*f(pot)} ${c}" transform="rotate(-90 ${cx} ${cy})"/>
-  <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--mark)" stroke-width="${sw}" stroke-dasharray="${c*f(score)} ${c}" transform="rotate(-90 ${cx} ${cy})"/>
+  <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--mark)" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${c*f(score)} ${c}" transform="rotate(-90 ${cx} ${cy})"/>
   ${avgv!=null?`<line x1="${t1[0]}" y1="${t1[1]}" x2="${t2[0]}" y2="${t2[1]}" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>`:''}
   <text x="${cx}" y="${cy+4}" text-anchor="middle" font-size="42" font-weight="800" fill="var(--ink)" letter-spacing="-1.5">${score}</text>
   <text x="${cx}" y="${cy+26}" text-anchor="middle" font-size="13" font-weight="600" fill="var(--muted)">out of ${total} · ${pct(score,total)}%</text></svg>`;
@@ -274,37 +274,40 @@ function classify(a,ids){const r=respMap(a.id);const q={cs:{n:0,items:[]},cl:{n:
 
 // Histogram of scores
 function histogram(scores,total){
-  const W=460,H=280,m={l:30,r:10,t:60,b:46},pw=W-m.l-m.r,ph=H-m.t-m.b,bw=4,nb=Math.ceil(total/bw);
-  const bins=Array(nb).fill(0);scores.forEach(s=>bins[Math.min(nb-1,Math.floor(s/bw))]++);
-  const ymax=Math.max(2,Math.ceil(Math.max(...bins)/2)*2);const X=v=>m.l+v/(nb*bw)*pw,Y=c=>m.t+ph-c/ymax*ph;const w=pw/nb;
-  let g=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Distribution of scores">`;
-  [0,ymax/2,ymax].forEach(v=>{g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" ${v?'stroke-dasharray="2 4"':''}/><text x="${m.l-7}" y="${Y(v)+4}" font-size="11" text-anchor="end" fill="var(--muted)">${v}</text>`});
-  bins.forEach((c,i)=>{const x=m.l+i*w+1.5,bw2=w-3,y=Y(c);const lo=i*bw,hi=i===nb-1?total:i*bw+bw-1;
-    if(c)g+=`<path d="M${x},${m.t+ph} V${y+3} q0,-3 3,-3 H${x+bw2-3} q3,0 3,3 V${m.t+ph} Z" fill="var(--brand-2)"/><text x="${x+bw2/2}" y="${y-5}" font-size="11" font-weight="700" text-anchor="middle" fill="var(--ink-2)">${c}</text>`;
+  const bw=total>60?5:4,nbAll=Math.ceil(total/bw);const allBins=Array(nbAll).fill(0);scores.forEach(s=>allBins[Math.min(nbAll-1,Math.floor(s/bw))]++);
+  let first=Math.max(0,allBins.findIndex(c=>c>0)-1),last=nbAll-1;if(first<0)first=0;
+  const bins=allBins.slice(first,last+1),nb=bins.length;
+  const W=440,H=250,m={l:30,r:12,t:46,b:44},pw=W-m.l-m.r,ph=H-m.t-m.b;
+  const ymax=Math.max(2,Math.ceil(Math.max(...bins)/2)*2);const lo0=first*bw,hi0=Math.min(total,(last+1)*bw);
+  const X=v=>m.l+(v-lo0)/(hi0-lo0)*pw,Y=c=>m.t+ph-c/ymax*ph;const w=pw/nb;
+  let g=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Distribution of scores"><defs><linearGradient id="hg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#920088"/><stop offset="1" stop-color="#610064"/></linearGradient></defs>`;
+  [0,ymax/2,ymax].forEach(v=>{g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v?'var(--line)':'var(--line-2)'}" ${v?'stroke-dasharray="2 4"':''}/><text x="${m.l-8}" y="${Y(v)+4}" font-size="12" text-anchor="end" fill="var(--muted)">${v}</text>`});
+  bins.forEach((c,i)=>{const x=m.l+i*w+2,bw2=w-4,y=Y(c);const lo=(first+i)*bw,hi=Math.min(total,lo+bw-1);const r=Math.min(5,bw2/2);
+    if(c)g+=`<path d="M${x},${m.t+ph} V${y+r} q0,-${r} ${r},-${r} H${x+bw2-r} q${r},0 ${r},${r} V${m.t+ph} Z" fill="url(#hg)"/><text x="${x+bw2/2}" y="${y-6}" font-size="13" font-weight="800" text-anchor="middle" fill="var(--ink)">${c}</text>`;
     g+=`<rect x="${x}" y="${m.t}" width="${bw2}" height="${ph}" fill="transparent" data-tip="${tip(`${lo} to ${hi} marks`,`${c} student${c===1?'':'s'}`)}"/>`;
-    if(i%2===0||nb<=8)g+=`<text x="${x+bw2/2}" y="${H-m.b+15}" font-size="10.5" text-anchor="middle" fill="var(--muted)">${lo}-${hi}</text>`});
-  const mean=avg(scores),med=median(scores);const mx=X(mean),dx=X(med);const close=Math.abs(mx-dx)<70;
-  const lab=(x,y,txt,col,anc)=>`<text x="${x}" y="${y}" font-size="11.5" font-weight="700" text-anchor="${anc}" fill="${col}">${txt}</text>`;
-  const anc=x=>x>W-90?'end':x<90?'start':'middle';
-  g+=`<line x1="${dx}" x2="${dx}" y1="${m.t-(close?30:8)}" y2="${m.t+ph}" stroke="var(--ink)" stroke-width="1.5"/>`+lab(dx,m.t-(close?34:12),`Median ${Math.round(med*10)/10}`,'var(--ink)',anc(dx));
-  g+=`<line x1="${mx}" x2="${mx}" y1="${m.t-14}" y2="${m.t+ph}" stroke="var(--orange)" stroke-width="2" stroke-dasharray="5 3"/>`+lab(mx,m.t-18,`Mean ${Math.round(mean*10)/10}`,'var(--orange)',anc(mx));
-  g+=`<text x="${m.l+pw/2}" y="${H-8}" font-size="11" text-anchor="middle" fill="var(--muted)">Score out of ${total}</text>`;
+    if(nb<=9||i%2===0)g+=`<text x="${x+bw2/2}" y="${H-m.b+17}" font-size="11.5" font-weight="600" text-anchor="middle" fill="var(--ink-2)">${lo}-${hi}</text>`});
+  const mean=avg(scores),med=median(scores);const mx=X(mean),dx=X(med);
+  const leftFirst=mx<dx;// put the smaller on the left with end anchor
+  const lab=(x,y,txt,col,anc)=>`<text x="${x}" y="${y}" font-size="12" font-weight="800" text-anchor="${anc}" fill="${col}">${txt}</text>`;
+  g+=`<line x1="${dx}" x2="${dx}" y1="${m.t-14}" y2="${m.t+ph}" stroke="var(--ink)" stroke-width="2"/>`+lab(dx+(leftFirst?4:-4),m.t-20,`Median ${Math.round(med*10)/10}`,'var(--ink)',leftFirst?'start':'end');
+  g+=`<line x1="${mx}" x2="${mx}" y1="${m.t-14}" y2="${m.t+ph}" stroke="var(--orange)" stroke-width="2" stroke-dasharray="5 3"/>`+lab(mx+(leftFirst?-4:4),m.t-20,`Mean ${Math.round(mean*10)/10}`,'#D8301A',leftFirst?'end':'start');
+  g+=`<text x="${m.l+pw/2}" y="${H-6}" font-size="11.5" text-anchor="middle" fill="var(--muted)">Score out of ${total}</text>`;
   return g+'</svg>';
 }
 // Facility columns: width = marks available, height = facility
 function columns(ps,overall){
-  const W=900,H=300,m={l:40,r:60,t:24,b:52},pw=W-m.l-m.r,ph=H-m.t-m.b,gap=5,M=ps.reduce((t,s)=>t+s.p.marks,0),u=(pw-gap*(ps.length-1))/M;
+  const W=900,H=300,m={l:40,r:60,t:24,b:52},pw=W-m.l-m.r,ph=H-m.t-m.b,gap=4,M=ps.reduce((t,s)=>t+s.p.marks,0),u=(pw-gap*(ps.length-1))/M;
   const Y=v=>m.t+ph-v/100*ph;
   let g=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Facility by question">`;
   g+=`<rect x="${m.l}" y="${Y(100)}" width="${pw}" height="${Y(70)-Y(100)}" fill="var(--good-z)"/><rect x="${m.l}" y="${Y(70)}" width="${pw}" height="${Y(50)-Y(70)}" fill="var(--warn-z)"/><rect x="${m.l}" y="${Y(50)}" width="${pw}" height="${Y(0)-Y(50)}" fill="var(--bad-z)"/>`;
   [0,50,70,100].forEach(v=>{g+=`<line x1="${m.l}" x2="${m.l+pw}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v?'var(--line-2)':'var(--ink-2)'}" ${v&&v<100?'stroke-dasharray="3 3"':''} stroke-width="1"/><text x="${m.l-8}" y="${Y(v)+4}" font-size="11" text-anchor="end" fill="var(--muted)">${v}%</text>`});
   let x=m.l;
-  ps.forEach(s=>{const w=s.p.marks*u,y=Y(s.pct||0),col=`var(--bar-${st(s.pct)})`;const r=Math.min(3,w/2);
+  ps.forEach(s=>{const w=s.p.marks*u,y=Y(s.pct||0),col=`var(--bar-${st(s.pct)})`;const r=Math.min(5,w/2);
     g+=`<path d="M${x},${Y(0)} V${y+r} q0,-${r} ${r},-${r} H${x+w-r} q${r},0 ${r},${r} V${Y(0)} Z" fill="${col}"/>`;
     if(w>=15)g+=`<text x="${x+w/2}" y="${y-6}" font-size="11" font-weight="700" text-anchor="middle" fill="var(--ink-2)">${s.pct}</text>`;
     g+=`<text x="${x+w/2}" y="${Y(0)+16}" font-size="11" font-weight="700" text-anchor="middle" fill="var(--ink-2)">${s.p.q}${s.p.p}</text><text x="${x+w/2}" y="${Y(0)+30}" font-size="9.5" text-anchor="middle" fill="var(--muted)">${s.p.marks}</text>`;
     g+=`<rect x="${x}" y="${m.t}" width="${w}" height="${ph}" fill="transparent" data-tip="${tip(`Q${qlab(s.p)} · ${s.p.topic}`,`${s.p.detail} · ${s.pct}% facility · ${s.got}/${s.max} marks`)}"/>`;x+=w+gap});
-  if(overall!=null){g+=`<line x1="${m.l}" x2="${m.l+pw+6}" y1="${Y(overall)}" y2="${Y(overall)}" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="6 3"/><text x="${m.l+pw+9}" y="${Y(overall)-2}" font-size="11" font-weight="700" fill="var(--ink)">Paper</text><text x="${m.l+pw+9}" y="${Y(overall)+11}" font-size="11" font-weight="700" fill="var(--ink)">${overall}%</text>`}
+  if(overall!=null){g+=`<line x1="${m.l}" x2="${m.l+pw+6}" y1="${Y(overall)}" y2="${Y(overall)}" stroke="var(--brand)" stroke-width="2" stroke-dasharray="6 4"/><text x="${m.l+pw+9}" y="${Y(overall)-2}" font-size="11" font-weight="700" fill="var(--brand)">Paper</text><text x="${m.l+pw+9}" y="${Y(overall)+11}" font-size="12" font-weight="800" fill="var(--brand)">${overall}%</text>`}
   g+=`<text x="${m.l-8}" y="${Y(0)+30}" font-size="9.5" text-anchor="end" fill="var(--muted)">marks</text>`;
   return g+'</svg>';
 }
@@ -369,8 +372,17 @@ function sHome(me){
   if(!last)return h+`<div class="empty">Your report appears here once you've recorded an assessment.</div>`;
   const x=respMap(last.id)[me.id];const sc=score(last,me.id);const alloc=a_alloc(last,x);const cav=classAvg(last,me.cls);
   const w=weakLessons(last,me.id);const cg=classGroup(last,me.cls,hasLessons(last)?'lesson':'module');
+  {const comb=cmbStats(mine,(a,by)=>groupStats(a,[me.id],by));const ks=Object.keys(comb).filter(k=>comb[k].max);const tg=ks.reduce((t,k)=>t+comb[k].got,0),tm=ks.reduce((t,k)=>t+comb[k].max,0);
+   const secure=ks.filter(k=>comb[k].pct>=70).length;const diff=cav!=null?Math.round(10*(sc-cav))/10:null;const pp=pct(sc,last.total);
+   h+=`<div class="band"><div class="metric"><span class="lab">${esc(last.id)} score</span><span class="val">${pp}%</span><span class="sub">${sc} of ${last.total} marks</span><div class="meter"><i style="width:${pp}%"></i></div></div>
+   <div class="metric"><span class="lab">Against ${esc(me.cls)}</span><span class="val" style="color:var(--${diff==null?'ink':diff>=0?'good':'bad'})!important">${diff==null?'–':(diff>0?'+':'')+diff}</span><span class="sub">marks ${diff==null?'':diff>=0?'above':'below'} the class average</span></div>
+   <div class="metric"><span class="lab">All assessments</span><span class="val">${pct(tg,tm)}%</span><span class="sub">${mine.length} recorded · ${tg} of ${tm} marks</span></div>
+   <div class="metric"><span class="lab">Secure topics</span><span class="val">${secure}<small> / ${ks.length}</small></span><span class="sub">at 70% or more overall</span></div>
+   <div class="metric"><span class="lab">Practice done</span><span class="val">${DB.done.size}</span><span class="sub">past-paper questions ticked off</span></div></div>`;}
   h+=`<div class="grid c-5-7"><div class="card"><div class="card-h"><div><h2>${esc(last.name.split(':')[0])} result</h2><p class="hint">${esc(last.name.split(':')[1]||'')}</p></div><button class="btn sec sm" data-act="results" data-aid="${last.id}">Full report</button></div><div class="card-b">${ringBlock(sc,last.total,sc+alloc,cav,me.cls)}</div></div>
   <div class="card"><div class="card-h"><div><h2>Work on these first</h2><p class="hint">Your three lowest lessons. The black line is the ${me.cls} average.</p></div><button class="btn sec sm" data-act="stab" data-k="practice">Practice questions</button></div><div class="card-b">${bulletRows(w.slice(0,3).map(o=>({name:esc(keyName(o.k)),sub:esc(o.k.includes('-')?`${lessonKey(o.k).code} ${MOD[lessonKey(o.k).code].name} · lesson ${lessonKey(o.k).n}`:o.k),v:o.pct,m:cg[o.k]?.pct,detail:`${o.got} of ${o.max} marks`})))}</div></div></div>`;
+  {const comb=cmbStats(mine,(a,by)=>groupStats(a,[me.id],by)),cc=cmbStats(mine,(a,by)=>classGroup(a,me.cls,by));const ks=Object.keys(comb).filter(k=>comb[k].max).sort((x,y)=>modOrder(x)-modOrder(y));
+   if(ks.length)h+=`<div class="card mt"><div class="card-h"><div><h2>Your topics so far</h2><p class="hint">Every mark on each SoL topic across all ${mine.length} of your assessments. The black line is the ${esc(me.cls)} average.</p></div><button class="btn sec sm" data-act="stab" data-k="progress">See progress</button></div><div class="card-b">${bulletRows(ks.map(k=>({name:esc(MOD[k]?.name||k),sub:esc(k)+' · '+comb[k].in.join(', '),v:comb[k].pct,m:cc[k]?.max?cc[k].pct:null,detail:`${comb[k].got} of ${comb[k].max} marks`})))}</div></div>`;}
   return h;
 }
 function a_alloc(a,x){return Math.min(a.total-a.parts.reduce((t,p)=>t+(x.ans[p.id]?.s||0),0),a.parts.reduce((t,p)=>t+Object.values(x.ans[p.id]?.r||{}).reduce((u,v)=>u+v,0),0))}
