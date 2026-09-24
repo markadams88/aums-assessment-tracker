@@ -12,7 +12,9 @@ try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved)Object.as
 function save(){try{localStorage.setItem(KEY,JSON.stringify({stab:S.stab,ttab:S.ttab,aid:S.aid,cls:S.cls,sAid:S.sAid,bankMod:S.bankMod,authTab:S.authTab}))}catch(e){}}
 // DB cache
 let ROLE=null,ME=null,LOADED=false;
-let DB={classes:[],students:[],assessments:[],resp:{},agg:{},done:new Set(),doneAll:{}};
+let DB={classes:[],students:[],assessments:[],resp:{},agg:{},done:new Set(),doneAll:{},settings:{}};
+const PDFSET=()=>Object.assign({questions:true,markschemes:true},DB.settings.student_pdfs||{});
+function pdfAllowed(kind){return ROLE==='teacher'&&!S.preview?true:PDFSET()[kind==='m'?'markschemes':'questions']!==false}
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pct=(g,m)=>m?Math.round(100*g/m):null;
 const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
@@ -96,6 +98,7 @@ async function srcDoc(name){if(!SRC_CACHE[name])SRC_CACHE[name]=paperBytes(name)
 const ascii=s=>String(s||'').replace(/[–—]/g,'-').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/\$[^$]*\$/g,m=>m.slice(1,-1).replace(/\\[a-zA-Z]+/g,'').replace(/[{}^_]/g,'')).replace(/[^\x20-\x7E]/g,'');
 function qLabel(b){return b.spec==='H640'?`H640 ${b.paper} ${b.series} ${b.q}`:`${b.paper} ${b.series} ${b.q}`}
 async function makeSheet(ids,kind,title){
+  if(!pdfAllowed(kind)){toast('Your teacher has turned this off for now');return}
   ids=[...new Set(ids)].filter(id=>kind==='q'?hasQ(id):QX[id]);
   if(!ids.length){toast(kind==='q'?'No question papers for these yet':'No mark schemes for these yet');return}
   toast(kind==='q'?'Making your question sheet…':'Making the mark scheme…');
@@ -149,8 +152,8 @@ async function makeSheet(ids,kind,title){
   const bytes=await out.save();const blob=new Blob([bytes],{type:'application/pdf'});const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download=ascii(`AUMS ${kind==='q'?'questions':'mark scheme'} - ${title}`).replace(/[\\/:*?"<>|]/g,'').slice(0,80)+'.pdf';document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),60000);toast('PDF ready')}
-function sheetBtns(ids,title,small){ids=ids.filter(hasQ);if(!ids.length)return '';const cls=small?'btn sec xs':'btn sec sm';const t=esc(title);
-  return `<span class="pbtns"><button class="${cls}" data-act="qpdf" data-kind="q" data-ids="${ids.join(',')}" data-title="${t}">${IC.pages} Questions PDF</button><button class="${cls}" data-act="qpdf" data-kind="m" data-ids="${ids.join(',')}" data-title="${t}">${IC.check||IC.pages} Mark scheme</button></span>`}
+function sheetBtns(ids,title,small){ids=ids.filter(hasQ);if(!ids.length)return '';const q=pdfAllowed('q'),m=pdfAllowed('m');if(!q&&!m)return '';const cls=small?'btn sec xs':'btn sec sm';const t=esc(title);
+  return `<span class="pbtns">${q?`<button class="${cls}" data-act="qpdf" data-kind="q" data-ids="${ids.join(',')}" data-title="${t}">${IC.pages} Questions PDF</button>`:''}${m?`<button class="${cls}" data-act="qpdf" data-kind="m" data-ids="${ids.join(',')}" data-title="${t}">${IC.check||IC.pages} Mark scheme</button>`:''}</span>`}
 
 // ---------- combined results across chosen assessments ----------
 // S.cmbSel: Set of assessment ids switched on (null = all). S.cmbOpen: Set of topic codes expanded. S.topicSel: Set of topic/lesson keys ticked for export.
@@ -378,7 +381,7 @@ function sHome(me){
    <div class="metric"><span class="lab">Against ${esc(me.cls)}</span><span class="val" style="color:var(--${diff==null?'ink':diff>=0?'good':'bad'})!important">${diff==null?'–':(diff>0?'+':'')+diff}</span><span class="sub">marks ${diff==null?'':diff>=0?'above':'below'} the class average</span></div>
    <div class="metric"><span class="lab">All assessments</span><span class="val">${pct(tg,tm)}%</span><span class="sub">${mine.length} recorded · ${tg} of ${tm} marks</span></div>
    <div class="metric"><span class="lab">Secure topics</span><span class="val">${secure}<small> / ${ks.length}</small></span><span class="sub">at 70% or more overall</span></div>
-   <div class="metric"><span class="lab">Practice done</span><span class="val">${DB.done.size}</span><span class="sub">past-paper questions ticked off</span></div></div>`;}
+   <div class="metric"><span class="lab">Practice done</span><span class="val">${me.id===ME?.id?DB.done.size:(DB.doneAll[me.id]?.size||0)}</span><span class="sub">past-paper questions ticked off</span></div></div>`;}
   h+=`<div class="grid c-5-7"><div class="card"><div class="card-h"><div><h2>${esc(last.name.split(':')[0])} result</h2><p class="hint">${esc(last.name.split(':')[1]||'')}</p></div><button class="btn sec sm" data-act="results" data-aid="${last.id}">Full report</button></div><div class="card-b">${ringBlock(sc,last.total,sc+alloc,cav,me.cls)}</div></div>
   <div class="card"><div class="card-h"><div><h2>Work on these first</h2><p class="hint">Your three lowest lessons. The black line is the ${me.cls} average.</p></div><button class="btn sec sm" data-act="stab" data-k="practice">Practice questions</button></div><div class="card-b">${bulletRows(w.slice(0,3).map(o=>({name:esc(keyName(o.k)),sub:esc(o.k.includes('-')?`${lessonKey(o.k).code} ${MOD[lessonKey(o.k).code].name} · lesson ${lessonKey(o.k).n}`:o.k),v:o.pct,m:cg[o.k]?.pct,detail:`${o.got} of ${o.max} marks`})))}</div></div></div>`;
   {const comb=cmbStats(mine,(a,by)=>groupStats(a,[me.id],by)),cc=cmbStats(mine,(a,by)=>classGroup(a,me.cls,by));const ks=Object.keys(comb).filter(k=>comb[k].max).sort((x,y)=>modOrder(x)-modOrder(y));
@@ -492,7 +495,8 @@ function sPractice(me){
   let h=`<div class="ph"><div><div class="eyebrow">Practice questions</div><h1>Your practice list</h1><p class="desc">OCR MEI past-paper questions for the lessons you've found hardest across all your assessments. Current specification first.</p></div><div class="band" style="margin:0;min-width:220px"><div class="metric"><span class="lab">Completed</span><span class="val">${doneCount}</span></div><div class="metric"><span class="lab">Lessons</span><span class="val">${list.length}</span></div></div></div>`;
   if(!list.length)return h+`<div class="empty">Everything is at 70% or above. Ask your teacher for extension questions.</div>`;
   const allIds=list.flatMap(o=>{const L=o.k.includes('-')?lessonKey(o.k):null;return bankFor(L?L.code:o.k,L?L.n:null,6,true,me.id).items.map(b=>b.id)});
-  if(allIds.some(hasQ))h+=`<div class="card" style="margin-bottom:18px"><div class="card-b row" style="justify-content:space-between;gap:12px;flex-wrap:wrap"><div><b>Print your whole practice list</b><div class="small muted">The real exam questions as a PDF, with the matching mark scheme as a separate PDF so you can check your answers after.</div></div>${sheetBtns(allIds,'My practice list')}</div></div>`;
+  if(!pdfAllowed('q')&&!pdfAllowed('m'))h+=`<div class="note">${IC.info}<div><b>Printing past papers is turned off for now.</b> Your teacher has switched off question and mark scheme PDFs. You can still see which questions to practise below.</div></div>`;
+  else if(allIds.some(hasQ))h+=`<div class="card" style="margin-bottom:18px"><div class="card-b row" style="justify-content:space-between;gap:12px;flex-wrap:wrap"><div><b>Print your whole practice list</b><div class="small muted">${pdfAllowed('q')&&pdfAllowed('m')?'The real exam questions as a PDF, with the matching mark scheme as a separate PDF so you can check your answers after.':pdfAllowed('q')?'The real exam questions as a PDF. Mark schemes are turned off for now.':'Mark schemes for these questions as a PDF.'}</div></div>${sheetBtns(allIds,'My practice list')}</div></div>`;
   return h+list.map(o=>focusBlock(o,me.id,true,6)).join('');
 }
 
@@ -600,6 +604,7 @@ function planText(){const {a,whole,groups}=planData();const L=o=>o.k.includes('-
   t+=`\nTargeted homework groups\n`;groups.forEach(o=>{t+=`\n${L(o)}: ${o.below.map(id=>stu(id).name).join(', ')}\n`;bankFor(kc(o).code,kc(o).n,3,false,'_').items.forEach(b=>t+=`   - ${bankSpec(b)} ${bankSrc(b)}: ${b.desc}\n`)});return t}
 function tSetup(){
   let h=`<div class="ph"><div><div class="eyebrow">Set up</div><h1>Classes and assessments</h1><p class="desc">The two things teachers set up. Students choose their class when they create an account.</p></div></div>`;
+  h+=pdfSwitchCard()+'<div class="mt"></div>';
   h+=`<div class="card"><div class="card-h"><div><h2>Classes</h2><p class="hint">Students pick from this list when they sign up. Add Year 13 classes here when you're ready.</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Class</th><th>Year</th><th>Teacher</th><th class="r">Students signed up</th><th>Shown at sign-up</th></tr></thead><tbody>${classes().map(c=>`<tr><td class="strong">${esc(c.id)}</td><td>Year ${c.year||12}</td><td>${esc(c.teacher||'')}</td><td class="r">${sidsIn(c.id).length}</td><td><label class="row small" style="gap:6px"><input type="checkbox" data-act="archive" data-c="${esc(c.id)}" ${c.archived?'':'checked'}> ${c.archived?'Hidden':'Shown'}</label></td></tr>`).join('')}</tbody></table>
   <form id="newclass" class="row" style="margin-top:18px;align-items:flex-end" novalidate><label class="fl"><span>Class name</span><input id="nc-name" type="text" placeholder="13MA1"></label><label class="fl"><span>Year</span><select id="nc-y"><option value="12">Year 12</option><option value="13" selected>Year 13</option></select></label><label class="fl"><span>Teacher</span><input id="nc-t" type="text" value="Mr Adams"></label><button class="btn" type="submit">${IC.plus}Add class</button><span id="nc-err" class="err"></span></form></div></div>`;
   h+=`<div class="card mt"><div class="card-h"><div><h2>Assessments</h2><p class="hint">Each question part is tagged to a SoL topic and lesson. That tagging is what drives every report. Students can only record results while an assessment is open.</p></div><button class="btn" data-act="newasm">${IC.plus}New assessment</button></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Assessment</th><th>Date</th><th class="r">Parts</th><th class="r">Marks</th><th>Classes</th><th class="r">Results</th><th>Status</th><th></th></tr></thead><tbody>${assessments().map(a=>`<tr><td><span class="strong">${esc(a.name)}</span></td><td>${a.date?fmDate(a.date):''}</td><td class="r">${a.parts.length}</td><td class="r">${a.total}</td><td class="small">${a.classes.map(esc).join(', ')}</td><td class="r">${Object.keys(respMap(a.id)).length}</td><td><select data-act="status" data-aid="${esc(a.id)}" aria-label="Status of ${esc(a.id)}"><option value="draft" ${a.status==='draft'?'selected':''}>Draft (hidden)</option><option value="open" ${a.status==='open'?'selected':''}>Open for entry</option><option value="closed" ${a.status==='closed'?'selected':''}>Closed</option></select></td><td class="r"><button class="btn sec sm" data-act="viewasm" data-aid="${esc(a.id)}">View parts</button></td></tr>`).join('')}</tbody></table>${S.editing?asmEditor():''}</div></div>`;
@@ -616,7 +621,20 @@ function asmEditor(){
   <div class="tw"><table class="tbl"><thead><tr><th>Q</th><th>Part</th><th>Topic</th><th>Details</th><th class="r">Marks</th><th>SoL topic</th><th>SoL lesson</th><th>Textbook practice</th></tr></thead><tbody>${e.parts.map((p,i)=>ro?`<tr><td class="strong">${p.q}</td><td>${p.p}</td><td>${esc(p.topic)}</td><td class="small">${esc(p.detail)}</td><td class="r">${p.marks}</td><td class="small">${esc(modLabel(p.module))}</td><td class="small">${p.lessons.map(k=>esc(lessonLabel(k))).join('<br>')}</td><td class="small">${esc(p.textbook||'')}</td></tr>`:`<tr><td><input style="width:50px" data-pe="${i}" data-f="q" value="${esc(p.q)}" aria-label="Question"></td><td><input style="width:50px" data-pe="${i}" data-f="p" value="${esc(p.p)}" aria-label="Part"></td><td><input data-pe="${i}" data-f="topic" value="${esc(p.topic)}" aria-label="Topic"></td><td><input data-pe="${i}" data-f="detail" value="${esc(p.detail)}" aria-label="Details"></td><td><input style="width:64px" type="number" min="1" data-pe="${i}" data-f="marks" value="${p.marks}" aria-label="Marks"></td><td><select data-pe="${i}" data-f="module" aria-label="SoL topic">${modOpts(p.module)}</select></td><td><select data-pe="${i}" data-f="lesson" aria-label="SoL lesson">${lesOpts(p.module,p.lessons[0])}</select></td><td><input data-pe="${i}" data-f="textbook" value="${esc(p.textbook||'')}" aria-label="Textbook"></td></tr>`).join('')}</tbody></table></div>
   ${ro?`<button class="btn sec sm" data-act="closeed" style="margin-top:12px">Close</button>`:`<div class="row" style="margin-top:12px"><button class="btn sec sm" data-act="addpart">${IC.plus}Add a question part</button><span style="flex:1"></span><span id="na-err" class="err"></span><button class="btn sec" data-act="closeed">Cancel</button><button class="btn" data-act="saveasm">Save and open for entry</button></div>`}</div>`;
 }
-function tBank(){return bankBrowser(true)}
+function pdfSwitchCard(){const v=PDFSET();const sw=(k,title,desc)=>`<label class="setrow"><span><b>${title}</b><small>${desc}</small></span><span class="switch"><input type="checkbox" data-act="pdfset" data-k="${k}" ${v[k]?'checked':''}><span class="tr"></span><span class="st">${v[k]?'On':'Off'}</span></span></label>`;
+  return `<div class="card"><div class="card-h"><div><h2>Past-paper PDFs for students</h2><p class="hint">Turn these off before an assessment if you don't want students printing past-paper questions or mark schemes. Staff can always make PDFs. The setting is checked by the database, so switching it off blocks the papers, not just the buttons.</p></div></div><div class="card-b"><div class="setrows">${sw('questions','Question PDFs','Students can print past-paper questions from their practice list, progress page and question bank.')}${sw('markschemes','Mark scheme PDFs','Students can print the mark schemes for those questions.')}</div></div></div>`}
+function tBank(){const v=PDFSET();return bankBrowser(true).replace('<div class="selbar',`${(!v.questions||!v.markschemes)?`<div class="note">${IC.info}<div><b>${!v.questions&&!v.markschemes?'PDFs are turned off for students.':!v.questions?'Question PDFs are turned off for students.':'Mark scheme PDFs are turned off for students.'}</b> You can still make them here. Change this under Classes and assessments.</div></div>`:''}<div class="selbar`)}
+function tPreview(){
+  const ss=students().slice().sort((a,b)=>a.name.localeCompare(b.name));
+  if(!ss.length)return `<div class="ph"><div><div class="eyebrow">Student view</div><h1>See what a student sees</h1><p class="desc">This fills in once students have signed up.</p></div></div>`;
+  if(!S.previewSid||!stu(S.previewSid))S.previewSid=ss[0].id;S.preview=S.previewSid;const s=stu(S.previewSid);
+  if(!['home','results','progress','practice','bank'].includes(S.stab))S.stab='home';
+  const tabs=[['home','Overview'],['results','My results'],['progress','Progress'],['practice','Practice'],['bank','Question bank']];
+  let h=`<div class="pvbar"><div class="pvl"><span class="pvtag">Student view</span><label class="fl inl"><span>Student</span><select id="pv-sid">${ss.map(x=>`<option value="${x.id}" ${x.id===s.id?'selected':''}>${esc(x.name)} · ${esc(x.cls||'no class')}</option>`).join('')}</select></label></div><div class="seg" role="group" aria-label="Student pages">${tabs.map(([k,l])=>`<button data-act="stab" data-k="${k}" aria-pressed="${S.stab===k}">${l}</button>`).join('')}</div></div>
+  <p class="xs muted" style="margin:0 0 14px">Exactly what ${esc(s.name.split(' ')[0])} sees, read only.${!PDFSET().questions||!PDFSET().markschemes?' PDF buttons follow your student PDF settings.':''}</p>`;
+  const saved=S.stab;const body=studentPage(s);
+  return h+`<div class="preview">${body}</div>`;
+}
 function bankBrowser(isT){
   const counts={};BANK.forEach(b=>{if(b.mod)counts[b.mod]=(counts[b.mod]||0)+1});
   if(!S.bankMod||!counts[S.bankMod])S.bankMod=Object.keys(counts).sort()[0];S.bankLes=S.bankLes||'all';S.bankSpec=S.bankSpec||'all';S.sel=S.sel||new Set();
@@ -648,6 +666,7 @@ async function loadData(){
     DB.students=[mapStudent(ME)];DB.assessments=asms.map(mapAsm);DB.resp=buildResp(subs);DB.agg={};(agg.data||[]).forEach(x=>{(DB.agg[x.assessment_id]=DB.agg[x.assessment_id]||{})[x.part_id]={t:parseFloat(x.total),n:x.n}});
     DB.done=new Set(done.map(d=>d.question_id));
   }
+  {const st=await sb.from('app_settings').select('key,value');DB.settings={};(st.data||[]).forEach(r=>DB.settings[r.key]=r.value)}
   if(!S.aid||!DB.assessments.some(a=>a.id===S.aid)){const as=assessments();S.aid=as.length?as[as.length-1].id:null}
   LOADED=true;
 }
@@ -684,7 +703,7 @@ function sidebar(){
   }else{
     nav=`<div class="sec">Analysis</div>${navBtn('ttab','report',S.ttab,IC.report,'Assessment report')}${navBtn('ttab','time',S.ttab,IC.trend,'Trends over time')}${navBtn('ttab','students',S.ttab,IC.users,'Students')}${navBtn('ttab','lessons',S.ttab,IC.layers,'SoL coverage')}
     <div class="sec">Action</div>${navBtn('ttab','plan',S.ttab,IC.plan,'Revision plan')}
-    <div class="sec">Admin</div>${navBtn('ttab','setup',S.ttab,IC.settings,'Classes and assessments')}${navBtn('ttab','bank',S.ttab,IC.bank,'Question bank')}`;
+    <div class="sec">Admin</div>${navBtn('ttab','setup',S.ttab,IC.settings,'Classes and assessments')}${navBtn('ttab','bank',S.ttab,IC.bank,'Question bank')}${navBtn('ttab','preview',S.ttab,IC.users,'Student view')}`;
     me=`<div class="me"><div class="avatar">${initials(ME.full_name||ME.email)}</div><div><div class="n">${esc(ME.full_name||ME.email)}</div><div class="r">Teacher</div></div><button data-act="signout" aria-label="Sign out" title="Sign out">${IC.out}</button></div>`;
   }
   return `<aside class="side"><div class="logo"><img src="${LOGO}" alt="Aston University Mathematics School"><div class="prod">Assessment Tracker</div></div><nav class="nav" aria-label="Main">${nav}</nav>${me}</aside>`;
@@ -694,7 +713,7 @@ function render(){
   if(!sb){root.innerHTML=`<div class="content"><div class="empty">The tracker isn't connected to its database yet. Add the Supabase details to config.js.</div></div>`;return}
   if(S.recovery||!ME){root.innerHTML=`<div class="main" style="min-height:100%">${S.view==='staff'&&!S.recovery?teacherLogin():authView()}</div>`;return}
   if(!LOADED){root.innerHTML=`<div class="content"><div class="empty">Loading…</div></div>`;return}
-  const body=ROLE!=='teacher'?studentPage(stu(ME.id)):({report:tReport,time:tTime,lessons:tLessons,students:tStudents,plan:tPlan,setup:tSetup,bank:tBank}[S.ttab]||tReport)();
+  const body=ROLE!=='teacher'?studentPage(stu(ME.id)):({report:tReport,time:tTime,lessons:tLessons,students:tStudents,plan:tPlan,setup:tSetup,bank:tBank,preview:tPreview}[S.ttab]||tReport)();
   root.innerHTML=`<div class="app">${sidebar()}<div class="main"><main class="content" id="main">${body}</main></div></div>`;
   typeset(document.getElementById('main'));
 }
@@ -721,7 +740,7 @@ document.addEventListener('click',async e=>{
   else
   if(act==='authtab'){S.authTab=t.dataset.k}
   else if(act==='stab'){S.stab=t.dataset.k;top0()}
-  else if(act==='ttab'){S.ttab=t.dataset.k;S.tStudent=null;S.editing=null;top0()}
+  else if(act==='ttab'){S.ttab=t.dataset.k;S.tStudent=null;S.editing=null;S.preview=t.dataset.k==='preview'?S.preview:null;if(t.dataset.k==='preview')S.stab=S.stab==='record'?'home':S.stab;top0()}
   else if(act==='signout'){await sb.auth.signOut();DRAFT=null;S.tStudent=null;toast('Signed out');return}
   else if(act==='forgot'){const em=(document.getElementById('si-email')?.value||'').trim().toLowerCase();if(!/^[^@\s]+@aums\.ac\.uk$/.test(em)){setErr('si-err','Type your school email above first, then press "Forgotten your password?" again.');return}
     const {error}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname});setErr('si-err',error?"The reset email couldn't be sent just now. Ask your maths teacher for help.":'Check your school email for a link to reset your password.');return}
@@ -762,6 +781,8 @@ document.addEventListener('change',async e=>{const t=e.target;
   if(t.dataset.act==='tsel'){S.topicSel=S.topicSel||new Set();t.checked?S.topicSel.add(t.dataset.k):S.topicSel.delete(t.dataset.k);const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(t.id==='cmb-per'||t.id==='cmb-sort'){if(t.id==='cmb-per')S.cmbPer=+t.value;else S.cmbSort=t.value;const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(t.dataset.act==='bsel'){S.sel=S.sel||new Set();t.checked?S.sel.add(t.dataset.q):S.sel.delete(t.dataset.q);const y=window.scrollY;render();window.scrollTo(0,y);return}
+  if(t.dataset.act==='pdfset'){const cur=PDFSET();cur[t.dataset.k]=t.checked;const {error}=await sb.from('app_settings').upsert({key:'student_pdfs',value:cur,updated_at:new Date().toISOString()});if(error){toast("Couldn't save that setting");t.checked=!t.checked;return}DB.settings.student_pdfs=cur;toast(t.checked?'Turned on for students':'Turned off for students');render();return}
+  if(t.id==='pv-sid'){S.previewSid=t.value;S.sAid=null;render();return}
   if(t.dataset.act==='status'){const {error}=await sb.from('assessments').update({status:t.value}).eq('id',t.dataset.aid);if(error){toast("Couldn't change the status");return}await refresh('Status updated');return}
   if(t.dataset.act==='archive'){const {error}=await sb.from('classes').update({archived:!t.checked}).eq('id',t.dataset.c);if(error){toast("Couldn't update the class");return}await refresh();return}
   if(t.dataset.act==='movecls'){const {error}=await sb.from('profiles').update({class_id:t.value||null}).eq('id',t.dataset.sid);if(error){toast("Couldn't move the student");return}await refresh('Class updated');return}
