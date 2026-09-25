@@ -21,7 +21,8 @@ The site runs on GitHub Pages. The data is stored in Supabase (project `aums-tra
 ## How the logins work
 
 - **Students** create an account with their @aums.ac.uk email and pick their class. They can only ever see their own results. Class averages come from a database function that returns totals only, never names.
-- **Staff** go to the page with `#staff` on the end of the address and sign in with a staff account. Mark's account (mark.adams@aums.ac.uk) is the first teacher. To add another teacher, create them in Supabase (Authentication > Users > Add user) and run `make-staff.sql` with their email.
+- **Staff** go to the page with `#staff` on the end of the address. To add a teacher: Accounts > Staff, type their school email and press Add staff, then send them the staff sign-in link. They open it, choose "Create staff account" and pick their own password. If they already made a student account, adding their email turns that account into a staff account.
+- **Student passwords:** Accounts > Students > Set password. Tell the student the new password. Staff can't set other staff passwords; staff use "Forgotten your password?" or Supabase for that.
 - The security is enforced by the database (row level security), not by the page. A student who looks at the page source still can't read anyone else's data.
 
 ## Common jobs
@@ -29,8 +30,8 @@ The site runs on GitHub Pages. The data is stored in Supabase (project `aums-tra
 - **Add Year 13 classes:** Staff area > Classes and assessments > Add class.
 - **New assessment:** Staff area > Classes and assessments > New assessment. Tag each part to a SoL topic and lesson.
 - **Close an assessment:** change its status to Closed. Students can then see their results but can't change them.
-- **Student picked the wrong class:** Staff area > Classes and assessments > Students, then change the class.
-- **Student forgot their password:** they use "Forgotten your password?" on the sign-in page. Supabase's free email only sends a few emails an hour. If that isn't enough, delete their account in Supabase (Authentication > Users) and they sign up again. Their old results go with it.
+- **Student picked the wrong class:** Staff area > Accounts > Students, then change the class.
+- **Student forgot their password:** Staff area > Accounts > Students > Set password, then tell them the new one. They can also use "Forgotten your password?" on the sign-in page, but Supabase's free email only sends a few emails an hour.
 - **Change a staff password:** Supabase > Authentication > Users, find the account, then send a password recovery email.
 
 ## Question and mark scheme PDFs

@@ -225,6 +225,7 @@ const IC={
   target:I('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.5"/>'),
   pages:I('<path d="M6 3h9l4 4v14H6z"/><path d="M9 12h6M9 16h6"/>'),
   globe:I('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>'),
+  key:I('<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14.5 8.5l2 2"/>'),
   list:I('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>'),
 };
 
@@ -608,8 +609,7 @@ function tSetup(){
   h+=`<div class="card"><div class="card-h"><div><h2>Classes</h2><p class="hint">Students pick from this list when they sign up. Add Year 13 classes here when you're ready.</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Class</th><th>Year</th><th>Teacher</th><th class="r">Students signed up</th><th>Shown at sign-up</th></tr></thead><tbody>${classes().map(c=>`<tr><td class="strong">${esc(c.id)}</td><td>Year ${c.year||12}</td><td>${esc(c.teacher||'')}</td><td class="r">${sidsIn(c.id).length}</td><td><label class="row small" style="gap:6px"><input type="checkbox" data-act="archive" data-c="${esc(c.id)}" ${c.archived?'':'checked'}> ${c.archived?'Hidden':'Shown'}</label></td></tr>`).join('')}</tbody></table>
   <form id="newclass" class="row" style="margin-top:18px;align-items:flex-end" novalidate><label class="fl"><span>Class name</span><input id="nc-name" type="text" placeholder="13MA1"></label><label class="fl"><span>Year</span><select id="nc-y"><option value="12">Year 12</option><option value="13" selected>Year 13</option></select></label><label class="fl"><span>Teacher</span><input id="nc-t" type="text" value="Mr Adams"></label><button class="btn" type="submit">${IC.plus}Add class</button><span id="nc-err" class="err"></span></form></div></div>`;
   h+=`<div class="card mt"><div class="card-h"><div><h2>Assessments</h2><p class="hint">Each question part is tagged to a SoL topic and lesson. That tagging is what drives every report. Students can only record results while an assessment is open.</p></div><button class="btn" data-act="newasm">${IC.plus}New assessment</button></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Assessment</th><th>Date</th><th class="r">Parts</th><th class="r">Marks</th><th>Classes</th><th class="r">Results</th><th>Status</th><th></th></tr></thead><tbody>${assessments().map(a=>`<tr><td><span class="strong">${esc(a.name)}</span></td><td>${a.date?fmDate(a.date):''}</td><td class="r">${a.parts.length}</td><td class="r">${a.total}</td><td class="small">${a.classes.map(esc).join(', ')}</td><td class="r">${Object.keys(respMap(a.id)).length}</td><td><select data-act="status" data-aid="${esc(a.id)}" aria-label="Status of ${esc(a.id)}"><option value="draft" ${a.status==='draft'?'selected':''}>Draft (hidden)</option><option value="open" ${a.status==='open'?'selected':''}>Open for entry</option><option value="closed" ${a.status==='closed'?'selected':''}>Closed</option></select></td><td class="r"><button class="btn sec sm" data-act="viewasm" data-aid="${esc(a.id)}">View parts</button></td></tr>`).join('')}</tbody></table>${S.editing?asmEditor():''}</div></div>`;
-  const nocls=students().filter(s=>!s.cls||!classes().some(c=>c.id===s.cls));
-  h+=`<div class="card mt"><div class="card-h"><div><h2>Students</h2><p class="hint">${students().length} student accounts. Change a class here if someone picked the wrong one.${nocls.length?` <b style="color:var(--bad)">${nocls.length} without a class.</b>`:''}</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Student</th><th>Email</th><th>Class</th></tr></thead><tbody>${[...students()].sort((x,y)=>(x.cls||'').localeCompare(y.cls||'')||x.name.localeCompare(y.name)).map(s=>`<tr><td class="strong">${esc(s.name)}</td><td class="small muted">${esc(s.email)}</td><td><select data-act="movecls" data-sid="${s.id}" aria-label="Class for ${esc(s.name)}"><option value="">No class</option>${classes().map(c=>`<option value="${esc(c.id)}" ${c.id===s.cls?'selected':''}>${esc(c.id)}</option>`).join('')}</select></td></tr>`).join('')||'<tr><td colspan="3" class="muted">No students have signed up yet.</td></tr>'}</tbody></table></div></div>`;
+  h+=`<div class="note mt">${IC.key}<div><b>Staff, students and passwords</b> are now under <button class="linkbtn" data-act="ttab" data-k="accounts">Accounts</button>. You can add teachers, move students between classes and set new passwords there.</div></div>`;
   return h;
 }
 function asmEditor(){
@@ -624,6 +624,20 @@ function asmEditor(){
 function pdfSwitchCard(){const v=PDFSET();const sw=(k,title,desc)=>`<label class="setrow"><span><b>${title}</b><small>${desc}</small></span><span class="switch"><input type="checkbox" data-act="pdfset" data-k="${k}" ${v[k]?'checked':''}><span class="tr"></span><span class="st">${v[k]?'On':'Off'}</span></span></label>`;
   return `<div class="card"><div class="card-h"><div><h2>Past-paper PDFs for students</h2><p class="hint">Turn these off before an assessment if you don't want students printing past-paper questions or mark schemes. Staff can always make PDFs. The setting is checked by the database, so switching it off blocks the papers, not just the buttons.</p></div></div><div class="card-b"><div class="setrows">${sw('questions','Question PDFs','Students can print past-paper questions from their practice list, progress page and question bank.')}${sw('markschemes','Mark scheme PDFs','Students can print the mark schemes for those questions.')}</div></div></div>`}
 function tBank(){const v=PDFSET();return bankBrowser(true).replace('<div class="selbar',`${(!v.questions||!v.markschemes)?`<div class="note">${IC.info}<div><b>${!v.questions&&!v.markschemes?'PDFs are turned off for students.':!v.questions?'Question PDFs are turned off for students.':'Mark scheme PDFs are turned off for students.'}</b> You can still make them here. Change this under Classes and assessments.</div></div>`:''}<div class="selbar`)}
+
+function tAccounts(){
+  let h=`<div class="ph"><div><div class="eyebrow">Accounts</div><h1>Staff and students</h1><p class="desc">Add teachers, move students to the right class and set new passwords.</p></div></div>`;
+  const staff=(DB.staff||[]).slice().sort((a,b)=>(a.full_name||a.email).localeCompare(b.full_name||b.email));const inv=DB.invites||[];
+  h+=`<div class="card"><div class="card-h"><div><h2>Staff</h2><p class="hint">Staff can see every class, every report and the teacher tools. Add a colleague's school email, then send them the staff sign-in link. They choose their own password when they create their account.</p></div></div><div class="card-b">
+   <form id="addstaff" class="row" style="align-items:flex-end;margin-bottom:16px" novalidate><label class="fl" style="flex:1 1 280px"><span>Colleague's school email</span><input id="as-email" type="email" placeholder="name@aums.ac.uk"></label><button class="btn" type="submit">${IC.plus}Add staff</button><button class="btn sec" type="button" data-act="copystaff">${IC.copy}Copy staff sign-in link</button></form><div id="as-err" class="err" role="alert"></div>
+   <div class="tw"><table class="tbl"><thead><tr><th>Name</th><th>Email</th><th>Status</th><th></th></tr></thead><tbody>
+   ${staff.map(p=>`<tr><td class="strong">${esc(p.full_name||'')}</td><td class="small muted">${esc(p.email)}</td><td><span class="chip good">Staff account</span></td><td class="r">${p.id===ME.id?'<span class="xs muted">You</span>':`<button class="btn sec sm" data-act="unstaff" data-id="${p.id}" data-n="${esc(p.full_name||p.email)}">Remove staff access</button>`}</td></tr>`).join('')}
+   ${inv.map(i=>`<tr><td class="muted">Not signed up yet</td><td class="small muted">${esc(i.email)}</td><td><span class="chip warn">Invited</span></td><td class="r"><button class="btn sec sm" data-act="uninvite" data-e="${esc(i.email)}">Cancel</button></td></tr>`).join('')}
+   </tbody></table></div></div></div>`;
+  const nocls=students().filter(s=>!s.cls||!classes().some(c=>c.id===s.cls));
+  h+=`<div class="card mt"><div class="card-h"><div><h2>Students</h2><p class="hint">${students().length} student accounts. Change a class if someone picked the wrong one. Set a new password if a student is locked out, then tell them what it is.${nocls.length?` <b style="color:var(--bad)">${nocls.length} without a class.</b>`:''}</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Student</th><th>Email</th><th>Class</th><th></th></tr></thead><tbody>${[...students()].sort((x,y)=>(x.cls||'').localeCompare(y.cls||'')||x.name.localeCompare(y.name)).map(s=>`<tr><td class="strong">${esc(s.name)}</td><td class="small muted">${esc(s.email)}</td><td><select data-act="movecls" data-sid="${s.id}" aria-label="Class for ${esc(s.name)}"><option value="">No class</option>${classes().map(c=>`<option value="${esc(c.id)}" ${c.id===s.cls?'selected':''}>${esc(c.id)}</option>`).join('')}</select></td><td class="r" style="white-space:nowrap">${S.pwFor===s.id?`<form class="pwrow" data-sid="${s.id}" novalidate><input type="text" id="pw-new" placeholder="New password (8+ characters)" autocomplete="off" aria-label="New password for ${esc(s.name)}"><button class="btn sm" type="submit">Save</button><button class="btn sec sm" type="button" data-act="pwcancel">Cancel</button><div id="pw-err" class="err" role="alert"></div></form>`:`<span class="acts"><button class="btn sec sm" data-act="pwset" data-sid="${s.id}">${IC.key}Set password</button><button class="btn sec sm" data-act="mkstaff" data-id="${s.id}" data-n="${esc(s.name)}">Make staff</button></span>`}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">No students have signed up yet.</td></tr>'}</tbody></table></div></div>`;
+  return h;
+}
 function tPreview(){
   const ss=students().slice().sort((a,b)=>a.name.localeCompare(b.name));
   if(!ss.length)return `<div class="ph"><div><div class="eyebrow">Student view</div><h1>See what a student sees</h1><p class="desc">This fills in once students have signed up.</p></div></div>`;
@@ -660,6 +674,7 @@ async function loadData(){
   const cls=await sb.from('classes').select('*').order('id');DB.classes=cls.data||[];
   if(ROLE==='teacher'){
     const [profs,asms,subs,done]=await Promise.all([fetchAll(()=>sb.from('profiles').select('*').eq('role','student').order('full_name')),fetchAll(()=>sb.from('assessments').select('*')),fetchAll(()=>sb.from('submissions').select('*')),fetchAll(()=>sb.from('practice_done').select('student_id,question_id'))]);
+    {const [st,iv]=await Promise.all([sb.from('profiles').select('id,email,full_name,role').eq('role','teacher'),sb.from('staff_invites').select('email,created_at').order('created_at')]);DB.staff=st.data||[];DB.invites=iv.data||[]}
     DB.students=profs.map(mapStudent);DB.assessments=asms.map(mapAsm);DB.resp=buildResp(subs);DB.doneAll={};done.forEach(d=>{(DB.doneAll[d.student_id]=DB.doneAll[d.student_id]||new Set).add(d.question_id)});
   }else{
     const [asms,subs,agg,done]=await Promise.all([fetchAll(()=>sb.from('assessments').select('*')),fetchAll(()=>sb.from('submissions').select('*').eq('student_id',ME.id)),sb.rpc('class_summary'),fetchAll(()=>sb.from('practice_done').select('question_id').eq('student_id',ME.id))]);
@@ -694,9 +709,10 @@ function teacherLogin(){
    <h1>Staff area.<br><em>Reports and planning.</em></h1>
    <p>Assessment reports, trends over time, SoL coverage and revision planning for the Maths department. Students can't see this area.</p>
    <div class="feat"><div>${IC.report}<span><b>Assessment reports</b>Question, lesson and class analysis for every assessment.</span></div><div>${IC.plan}<span><b>Revision planning</b>Starters and homework groups built from the results.</span></div></div></div>
-   <div class="formp"><div class="box"><div class="eyebrow">Staff only</div><h2>Teacher sign in</h2><p class="lead">Sign in with your staff account.</p>
+   <div class="formp"><div class="box"><div class="tabsx"><button aria-pressed="${S.staffTab!=='new'}" data-act="stafftab" data-k="in">Sign in</button><button aria-pressed="${S.staffTab==='new'}" data-act="stafftab" data-k="new">Create staff account</button></div>${S.staffTab==='new'?`<div class="eyebrow">Staff only</div><h2>Create your staff account</h2><p class="lead">A colleague needs to add your email under Accounts first.</p>
+   <form id="tsignup" novalidate><div class="field"><label for="ts-name">Full name</label><input id="ts-name" type="text" autocomplete="name"></div><div class="field"><label for="ts-email">School email</label><input id="ts-email" type="email" autocomplete="username" placeholder="name@aums.ac.uk"></div><div class="field"><label for="ts-pw">Choose a password</label><input id="ts-pw" type="password" autocomplete="new-password"><div class="xs muted" style="margin-top:4px">At least 8 characters.</div></div><div id="ts-err" class="err" role="alert" style="margin-bottom:10px"></div><button class="btn" type="submit">Create staff account</button></form>`:`<div class="eyebrow">Staff only</div><h2>Teacher sign in</h2><p class="lead">Sign in with your staff account.</p>
    <form id="tlogin" novalidate><div class="field"><label for="tl-email">Email</label><input id="tl-email" type="email" autocomplete="username" placeholder="name@aums.ac.uk"></div><div class="field"><label for="tl-pw">Password</label><input id="tl-pw" type="password" autocomplete="current-password"></div>
-   <div id="tl-err" class="err" role="alert" style="margin-bottom:10px">${esc(S.staffErr||"")}</div><button class="btn" type="submit" ${S.busy?'disabled':''}>${S.busy?'Signing in…':'Sign in'}</button></form>
+   <div id="tl-err" class="err" role="alert" style="margin-bottom:10px">${esc(S.staffErr||"")}</div><button class="btn" type="submit" ${S.busy?'disabled':''}>${S.busy?'Signing in…':'Sign in'}</button></form>`}
    <p class="small muted" style="margin-top:18px;text-align:center">Not a teacher? <a class="linkbtn" href="#">Go to the student sign in</a></p></div></div></div>`;
 }
 function navBtn(act,k,cur,icon,label,badge){return `<button data-act="${act}" data-k="${k}" ${cur===k?'aria-current="page"':''}>${icon}<span class="lbl">${label}</span>${badge?`<span class="badge">${badge}</span>`:''}</button>`}
@@ -708,7 +724,7 @@ function sidebar(){
   }else{
     nav=`<div class="sec">Analysis</div>${navBtn('ttab','report',S.ttab,IC.report,'Assessment report')}${navBtn('ttab','time',S.ttab,IC.trend,'Trends over time')}${navBtn('ttab','students',S.ttab,IC.users,'Students')}${navBtn('ttab','lessons',S.ttab,IC.layers,'SoL coverage')}
     <div class="sec">Action</div>${navBtn('ttab','plan',S.ttab,IC.plan,'Revision plan')}
-    <div class="sec">Admin</div>${navBtn('ttab','setup',S.ttab,IC.settings,'Classes and assessments')}${navBtn('ttab','bank',S.ttab,IC.bank,'Question bank')}${navBtn('ttab','preview',S.ttab,IC.users,'Student view')}`;
+    <div class="sec">Admin</div>${navBtn('ttab','setup',S.ttab,IC.settings,'Classes and assessments')}${navBtn('ttab','bank',S.ttab,IC.bank,'Question bank')}${navBtn('ttab','accounts',S.ttab,IC.key,'Accounts')}${navBtn('ttab','preview',S.ttab,IC.users,'Student view')}`;
     me=`<div class="me"><div class="avatar">${initials(ME.full_name||ME.email)}</div><div><div class="n">${esc(ME.full_name||ME.email)}</div><div class="r">Teacher</div></div><button data-act="signout" aria-label="Sign out" title="Sign out">${IC.out}</button></div>`;
   }
   return `<aside class="side"><div class="logo"><img src="${LOGO}" alt="Aston University Mathematics School"><div class="prod">Assessment Tracker</div></div><nav class="nav" aria-label="Main">${nav}</nav>${me}</aside>`;
@@ -718,7 +734,7 @@ function render(){
   if(!sb){root.innerHTML=`<div class="content"><div class="empty">The tracker isn't connected to its database yet. Add the Supabase details to config.js.</div></div>`;return}
   if(S.recovery||!ME){root.innerHTML=`<div class="main" style="min-height:100%">${S.view==='staff'&&!S.recovery?teacherLogin():authView()}</div>`;return}
   if(!LOADED){root.innerHTML=`<div class="content"><div class="empty">Loading…</div></div>`;return}
-  const body=ROLE!=='teacher'?studentPage(stu(ME.id)):({report:tReport,time:tTime,lessons:tLessons,students:tStudents,plan:tPlan,setup:tSetup,bank:tBank,preview:tPreview}[S.ttab]||tReport)();
+  const body=ROLE!=='teacher'?studentPage(stu(ME.id)):({report:tReport,time:tTime,lessons:tLessons,students:tStudents,plan:tPlan,setup:tSetup,bank:tBank,preview:tPreview,accounts:tAccounts}[S.ttab]||tReport)();
   root.innerHTML=`<div class="app">${sidebar()}<div class="main"><main class="content" id="main">${body}</main></div></div>`;
   typeset(document.getElementById('main'));
 }
@@ -739,6 +755,13 @@ document.addEventListener('click',async e=>{
   if(act==='tselweak'){S.topicSel=S.topicSel||new Set();t.dataset.keys.split('|').forEach(k=>S.topicSel.add(k));const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(act==='tclear'){S.topicSel=new Set();const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(act==='tsel')return;
+  if(act==='pwset'){S.pwFor=t.dataset.sid;render();document.getElementById('pw-new')?.focus();return}
+  if(act==='pwcancel'){S.pwFor=null;render();return}
+  if(act==='copystaff'){copy(location.origin+location.pathname+'#staff','Staff sign-in link copied');return}
+  if(act==='mkstaff'){if(!confirm(`Give ${t.dataset.n} staff access? They will see every class and the teacher tools, and stop appearing as a student.`))return;const {error}=await sb.rpc('set_staff_access',{target:t.dataset.id,make_teacher:true});if(error){toast(error.message);return}await refresh(`${t.dataset.n} is now staff`);return}
+  if(act==='unstaff'){if(!confirm(`Remove staff access for ${t.dataset.n}? Their account becomes a student account with no class.`))return;const {error}=await sb.rpc('set_staff_access',{target:t.dataset.id,make_teacher:false});if(error){toast(error.message);return}await refresh('Staff access removed');return}
+  if(act==='uninvite'){const {error}=await sb.from('staff_invites').delete().eq('email',t.dataset.e);if(error){toast("Couldn't cancel that");return}await refresh('Invite cancelled');return}
+  if(act==='stafftab'){S.staffTab=t.dataset.k;S.staffErr='';render();return}
   if(act==='bclear'){S.sel=new Set()}
   else if(act==='bselall'){const on=t.dataset.on==='1';document.querySelectorAll('[data-act="bsel"]').forEach(x=>{on?S.sel.add(x.dataset.q):S.sel.delete(x.dataset.q)})}
   else if(act==='bmore'){S.bankMore=true}
@@ -826,6 +849,22 @@ document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target
   if(f.id==='tlogin'){S.staffErr='';const em=v('tl-email').toLowerCase()||CFG.staffEmail,pw=document.getElementById('tl-pw').value;if(!pw)return setErr('tl-err','Enter your password.');f.querySelector('button').disabled=true;S.staffAttempt=true;
     const {error}=await sb.auth.signInWithPassword({email:em,password:pw});
     if(error){S.staffAttempt=false;f.querySelector('button').disabled=false;const i=document.getElementById('tl-pw');i.value='';i.focus();return setErr('tl-err',"That email and password don't match.")}return}
+  if(f.classList.contains('pwrow')){const pw=document.getElementById('pw-new').value;if(pw.length<8)return setErr('pw-err','Use at least 8 characters.');
+    const {error}=await sb.rpc('set_student_password',{target:f.dataset.sid,new_password:pw});if(error)return setErr('pw-err',error.message);
+    const n=stu(f.dataset.sid)?.name||'the student';S.pwFor=null;render();toast(`Password changed. Tell ${n.split(' ')[0]} their new password.`);return}
+  if(f.id==='addstaff'){const em=v('as-email').toLowerCase();if(!/^[^@\s]+@aums\.ac\.uk$/.test(em))return setErr('as-err','Use a school email ending @aums.ac.uk.');
+    const exists=[...students()].find(x=>(x.email||'').toLowerCase()===em);const isStaff=(DB.staff||[]).some(x=>x.email===em);
+    if(isStaff)return setErr('as-err','That person already has staff access.');
+    if(exists){if(!confirm(`${exists.name} already has a student account with that email. Give it staff access?`))return;const {error}=await sb.rpc('set_staff_access',{target:exists.id,make_teacher:true});if(error)return setErr('as-err',error.message);await refresh(`${exists.name} is now staff`);return}
+    const {error}=await sb.from('staff_invites').upsert({email:em,invited_by:ME.id});if(error)return setErr('as-err',"Couldn't add that email: "+error.message);
+    await refresh('Added. Send them the staff sign-in link.');return}
+  if(f.id==='tsignup'){const name=v('ts-name'),em=v('ts-email').toLowerCase(),pw=document.getElementById('ts-pw').value;
+    if(!name)return setErr('ts-err','Enter your name.');if(!/^[^@\s]+@aums\.ac\.uk$/.test(em))return setErr('ts-err','Use your school email ending @aums.ac.uk.');if(pw.length<8)return setErr('ts-err','Your password needs at least 8 characters.');
+    const inv=await sb.rpc('is_staff_invited',{check_email:em});if(!inv.data)return setErr('ts-err',"That email hasn't been added as staff yet. Ask a colleague to add you under Accounts, then try again.");
+    f.querySelector('button').disabled=true;S.staffAttempt=true;
+    const {data,error}=await sb.auth.signUp({email:em,password:pw,options:{data:{full_name:name}}});
+    if(error){S.staffAttempt=false;f.querySelector('button').disabled=false;const m=(error.message||'').toLowerCase();return setErr('ts-err',m.includes('registered')||m.includes('exists')?'There is already an account with that email. Use Sign in instead.':'Something went wrong: '+error.message)}
+    toast('Staff account created');return}
   if(f.id==='newpw'){const pw=document.getElementById('np-pw').value;if(pw.length<8)return setErr('np-err','Your password needs at least 8 characters.');
     const {error}=await sb.auth.updateUser({password:pw});if(error)return setErr('np-err','Could not save the new password: '+error.message);S.recovery=false;toast('Password saved');const {data}=await sb.auth.getSession();startSession(data.session);return}
   if(f.id==='newclass'){const n=v('nc-name').toUpperCase(),y=+v('nc-y'),tt=v('nc-t');

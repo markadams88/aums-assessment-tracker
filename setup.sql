@@ -166,3 +166,71 @@ create policy "Teachers manage papers" on storage.objects
   for all to authenticated
   using (bucket_id = 'papers' and public.is_teacher())
   with check (bucket_id = 'papers' and public.is_teacher());
+
+-- ---------- staff accounts and student passwords ----------
+create extension if not exists pgcrypto with schema extensions;
+
+create table if not exists public.staff_invites(
+  email text primary key,
+  invited_by uuid,
+  created_at timestamptz not null default now()
+);
+alter table public.staff_invites enable row level security;
+drop policy if exists "Teachers manage staff invites" on public.staff_invites;
+create policy "Teachers manage staff invites" on public.staff_invites for all to authenticated
+  using (public.is_teacher()) with check (public.is_teacher());
+
+-- sign-up: invited emails become teachers, everyone else a student
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare invited boolean;
+begin
+  if new.email is null or lower(new.email) not like '%@aums.ac.uk' then
+    raise exception 'Use your school email ending @aums.ac.uk';
+  end if;
+  select exists(select 1 from public.staff_invites i where i.email = lower(new.email)) into invited;
+  insert into public.profiles (id, email, full_name, class_id, role)
+  values (new.id, lower(new.email),
+          coalesce(new.raw_user_meta_data->>'full_name', ''),
+          case when invited then null else (select c.id from public.classes c where c.id = new.raw_user_meta_data->>'class_id') end,
+          case when invited then 'teacher' else 'student' end);
+  if invited then delete from public.staff_invites where email = lower(new.email); end if;
+  return new;
+end $$;
+
+-- the staff sign-up form checks this first, so people who aren't invited get a clear message
+create or replace function public.is_staff_invited(check_email text) returns boolean
+language sql security definer set search_path = public stable as $$
+  select exists(select 1 from public.staff_invites where email = lower(trim(check_email)))
+$$;
+revoke all on function public.is_staff_invited(text) from public;
+grant execute on function public.is_staff_invited(text) to anon, authenticated;
+
+-- teachers set a new password for a student
+create or replace function public.set_student_password(target uuid, new_password text) returns void
+language plpgsql security definer set search_path = public, extensions, auth as $$
+begin
+  if not public.is_teacher() then raise exception 'Only staff can change passwords'; end if;
+  if coalesce(length(new_password),0) < 8 then raise exception 'The password needs at least 8 characters'; end if;
+  if not exists (select 1 from public.profiles where id = target and role = 'student') then
+    raise exception 'That is not a student account';
+  end if;
+  update auth.users set encrypted_password = extensions.crypt(new_password, extensions.gen_salt('bf')), updated_at = now()
+  where id = target;
+end $$;
+revoke all on function public.set_student_password(uuid, text) from public, anon;
+grant execute on function public.set_student_password(uuid, text) to authenticated;
+
+-- teachers give or remove staff access for an existing account
+create or replace function public.set_staff_access(target uuid, make_teacher boolean) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_teacher() then raise exception 'Only staff can do this'; end if;
+  if target = auth.uid() and not make_teacher then raise exception 'You cannot remove your own staff access'; end if;
+  update public.profiles
+     set role = case when make_teacher then 'teacher' else 'student' end,
+         class_id = case when make_teacher then null else class_id end
+   where id = target;
+end $$;
+revoke all on function public.set_staff_access(uuid, boolean) from public, anon;
+grant execute on function public.set_staff_access(uuid, boolean) to authenticated;
