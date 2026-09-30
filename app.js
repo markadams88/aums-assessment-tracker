@@ -9,7 +9,7 @@ const MOD={};STATIC.modules.forEach(m=>MOD[m.code]=m);
 const KEY='aums-tracker-ui-v1';
 let S={stab:'home',ttab:'report',aid:null,cls:'all',sAid:null,recAid:null,tStudent:null,bankMod:'C&M 00',bankLes:'all',editing:null,authTab:'signup',view:location.hash==='#staff'?'staff':'student',busy:false,recovery:false};
 try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved)Object.assign(S,saved,{editing:null,tStudent:null,busy:false,recovery:false,view:location.hash==='#staff'?'staff':'student'});}catch(e){}
-function save(){try{localStorage.setItem(KEY,JSON.stringify({stab:S.stab,ttab:S.ttab,aid:S.aid,cls:S.cls,sAid:S.sAid,bankMod:S.bankMod,authTab:S.authTab}))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify({stab:S.stab,ttab:S.ttab,aid:S.aid,cls:S.cls,sAid:S.sAid,bankMod:S.bankMod,authTab:S.authTab,stView:S.stView,stSort:S.stSort,stShow:S.stShow,stDir:S.stDir}))}catch(e){}}
 // DB cache
 let ROLE=null,ME=null,LOADED=false;
 let DB={classes:[],students:[],assessments:[],resp:{},agg:{},done:new Set(),doneAll:{},settings:{}};
@@ -506,17 +506,18 @@ function tFilters(showAid=true){const as=assessments();
   return `<div class="filters">${showAid?`<label class="fl"><span>Assessment</span><select id="t-aid">${as.map(a=>`<option value="${a.id}" ${a.id===S.aid?'selected':''}>${esc(a.name)}</option>`).join('')}</select></label>`:''}<label class="fl"><span>Class</span><select id="t-cls"><option value="all">All classes</option>${classes().map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${c.id}</option>`).join('')}</select></label></div>`}
 const grpName=()=>S.cls==='all'?'all classes':S.cls;
 function tReport(){
-  const a=asm(S.aid);if(!a)return noAssess();S.aid=a.id;const all=sidsIn(S.cls),sub=submitted(a.id,S.cls);
+  const a=asm(S.aid);if(!a)return noAssess();S.aid=a.id;const sub=submitted(a.id,S.cls);const all=[...new Set(expectedFor(a,S.cls).concat(sub))];const miss0=all.filter(id=>!respMap(a.id)[id]);
   let h=`<div class="ph"><div><div class="eyebrow">Assessment report</div><h1>${esc(a.name)}</h1><p class="desc">${grpName()} · ${a.parts.length} question parts · ${a.total} marks · sat w/c ${fmDate(a.date)}</p></div>${tFilters()}</div>`;
-  if(!sub.length)return h+`<div class="empty">No results recorded yet for this group.</div>`;
+  if(!sub.length)return h+`<div class="empty">No results recorded yet for this group.</div>`+missingCard(a,miss0);
   const scores=sub.map(id=>score(a,id)).sort((x,y)=>x-y);const mean=avg(scores),med=median(scores);const q1=scores[Math.floor(scores.length*.25)],q3=scores[Math.floor(scores.length*.75)];
   const byL=hasLessons(a);const pr=priorities(a,sub);const weakest=[...pr].sort((x,y)=>x.pct-y.pct)[0];
   h+=`<div class="band">
-   <div class="metric"><span class="lab">Submitted</span><span class="val">${sub.length}<small> / ${all.length}</small></span><span class="sub">${all.length-sub.length?`${all.length-sub.length} still to record`:'Everyone has recorded'}</span><div class="meter"><i style="width:${100*sub.length/all.length}%"></i></div></div>
+   <div class="metric ${miss0.length?'alert':''}"><span class="lab">Submitted</span><span class="val">${sub.length}<small> / ${all.length}</small></span><span class="sub">${miss0.length?`<button type="button" class="linkbtn" data-act="tomiss">${miss0.length} still to record</button>`:'Everyone has recorded'}</span><div class="meter"><i style="width:${100*sub.length/all.length}%"></i></div></div>
    <div class="metric"><span class="lab">Mean score</span><span class="val">${(Math.round(mean*10)/10)}<small> / ${a.total}</small></span><span class="sub">${pct(mean,a.total)}% of available marks</span></div>
    <div class="metric"><span class="lab">Median</span><span class="val">${med}<small> / ${a.total}</small></span><span class="sub">Middle half scored ${q1} to ${q3}</span></div>
    <div class="metric"><span class="lab">Range</span><span class="val">${scores[0]}<small> to </small>${scores[scores.length-1]}</span><span class="sub">Lowest and highest</span></div>
    <div class="metric"><span class="lab">Weakest ${byL?'lesson':'topic'}</span><span class="val txt">${esc(keyName(weakest.k))}</span><span class="sub">${keyCode(weakest.k)} · ${weakest.pct}% of marks gained</span></div></div>`;
+  h+=missingCard(a,miss0);
   // focus + distribution
   const totalLost=pr.reduce((t,o)=>t+o.lost,0);const top=pr.slice(0,6);let cum=0;const top3=pr.slice(0,3).reduce((t,o)=>t+o.lost,0);
   h+=`<div class="grid c-7-5"><div class="card"><div class="card-h"><div><h2>Where to focus teaching time</h2><p class="hint">${byL?'Lessons':'Topics'} ranked by total marks lost across ${grpName()}. A big lesson that everyone half-knows outranks a one-mark slip.</p></div></div><div class="card-b">
@@ -538,9 +539,7 @@ function tReport(){
   const {t,who}=reasonTotals(a,sub);const arr=Object.entries(t).sort((x,y)=>y[1]-x[1]).slice(0,8);
   h+=`<div class="stack"><div class="card"><div class="card-h"><div><h2>Classes side by side</h2><p class="hint">Facility on each SoL topic.</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Class</th>${mods.map(m=>`<th class="c" data-tip="${tip(modLabel(m))}">${m}</th>`).join('')}</tr></thead><tbody>${cls.map(c=>{const gg=groupStats(a,submitted(a.id,c.id),'module');return `<tr><td class="strong">${c.id}</td>${mods.map(m=>cellTd(gg[m].pct,`data-tip="${tip(c.id+' · '+modLabel(m),gg[m].got+'/'+gg[m].max+' marks')}"`)).join('')}</tr>`}).join('')}<tr><td class="strong">${grpName()}</td>${mods.map(m=>{const gg=groupStats(a,sub,'module');return cellTd(gg[m].pct)}).join('')}</tr></tbody></table><div class="xs muted" style="margin-top:10px">${mods.map(m=>`<b>${m}</b> ${esc(MOD[m]?.name)}`).join(' · ')}</div></div></div>
    <div class="card"><div class="card-h"><div><h2>Exam technique</h2><p class="hint">Marks students put down to each habit.</p></div></div><div class="card-b">${arr.length?hbars(arr.map(([k,v])=>({name:STATIC.reasons[k],v,vt:`${v} <span class="xs muted">· ${who[k].size} students</span>`,detail:`${v} marks · ${who[k].size} students`}))):'<div class="empty">No reasons recorded.</div>'}</div></div></div></div>`;
-  {const r=respMap(a.id);const miss=all.filter(id=>!r[id]);
-    h+=`<div class="grid c-7-5 mt"><div class="card"><div class="card-h"><div><h2>Confidence check</h2><p class="hint">Every student rating (one per question part) placed by how confident they felt and whether they secured 70% of the marks. Chips show the questions that appear most.</p></div></div><div class="card-b">${quadrant(classify(a,sub),{teacher:true})}</div></div>
-    <div class="card"><div class="card-h"><div><h2>Still to record</h2><p class="hint">${miss.length?`${miss.length} student${miss.length===1?'':'s'} in ${grpName()} with no ${esc(a.id)} results.`:'Everyone has recorded results.'}</p></div>${miss.length?`<button class="btn sec sm" data-act="copy" data-what="missing">${IC.copy}Copy emails</button>`:''}</div><div class="card-b tw">${miss.length?`<table class="tbl"><tbody>${miss.map(id=>{const s=stu(id);return `<tr><td><span class="strong">${esc(s.name)}</span><div class="xs muted">${esc(s.email)}</div></td><td class="r"><span class="chip plain">${s.cls}</span></td></tr>`}).join('')}</tbody></table>`:''}</div></div></div>`}
+  h+=`<div class="card mt"><div class="card-h"><div><h2>Confidence check</h2><p class="hint">Every student rating (one per question part) placed by how confident they felt and whether they secured 70% of the marks. Chips show the questions that appear most.</p></div></div><div class="card-b">${quadrant(classify(a,sub),{teacher:true})}</div></div>`;
   return h;
 }
 function tTime(){
@@ -576,14 +575,52 @@ function tLessons(){
   return h;
 }
 function noAssess(){return `<div class="ph"><div><div class="eyebrow">Getting started</div><h1>No assessments yet</h1><p class="desc">Set one up under Classes and assessments.</p></div></div>`}
+// students expected to sit an assessment (in the chosen class filter and in a class the paper is set for)
+function expectedFor(a,cls){return sidsIn(cls).filter(id=>!a.classes.length||a.classes.includes(stu(id).cls))}
+function neverRecorded(id){return !assessments().some(x=>respMap(x.id)[id])}
+const surname=n=>{const w=String(n||'').trim().split(/\s+/);return (w[w.length-1]||'').toLowerCase()};
+function missingCard(a,miss,opts={}){
+  if(!miss.length)return `<div class="misscard ok">${IC.check||''}<div><b>Everyone in ${esc(grpName())} has recorded ${esc(a.id)}.</b></div></div>`;
+  const nev=miss.filter(neverRecorded).length;
+  const byC={};miss.forEach(id=>{const s=stu(id);(byC[s.cls||'No class']=byC[s.cls||'No class']||[]).push(s)});
+  return `<div class="misscard" id="missing"><div class="mh"><div><div class="mt1"><span class="mnum">${miss.length}</span> student${miss.length===1?' has':'s have'} not recorded ${esc(a.id)} yet</div>
+    <div class="xs muted">${nev?`${nev} of them ${nev===1?'has':'have'} not recorded any assessment at all (marked <span class="chip bad">No data</span>). `:''}Chase them up, or copy their emails into one message.</div></div>
+    <button class="btn sm" data-act="copy" data-what="missing">${IC.copy}Copy emails</button></div>
+    <div class="mlist">${Object.keys(byC).sort().map(c=>`<div class="mc"><span class="chip plain">${esc(c)}</span>${byC[c].sort((x,y)=>surname(x.name).localeCompare(surname(y.name))).map(s=>`<span class="mp" title="${esc(s.email)}">${esc(s.name)}${neverRecorded(s.id)?' <span class="chip bad">No data</span>':''}</span>`).join('')}</div>`).join('')}</div></div>`}
 function tStudents(){
   if(S.tStudent){const s=stu(S.tStudent);return `<button class="btn sec sm" data-act="tback" style="margin-bottom:16px">← Back to all students</button>`+sResults(s,S.aid,true)}
-  const a=asm(S.aid);if(!a)return noAssess();const sub=submitted(a.id,S.cls);const byL=hasLessons(a);
-  let h=`<div class="ph"><div><div class="eyebrow">Students</div><h1>${esc(a.name.split(':')[0])} by student</h1><p class="desc">Each cell is a student's percentage on a ${byL?'lesson':'topic'}. Lowest total first. Click a name to open that student's report.</p></div>${tFilters()}</div>`;
+  const a=asm(S.aid);if(!a)return noAssess();const r=respMap(a.id);const byL=hasLessons(a);
+  const exp=expectedFor(a,S.cls);const extra=submitted(a.id,S.cls).filter(id=>!exp.includes(id));const pool=exp.concat(extra);
+  const miss=pool.filter(id=>!r[id]);const done=pool.filter(id=>r[id]);
+  const view=S.stView||'pct',sort=S.stSort||'low',show=S.stShow||'all';
   const keys=byL?sortLessons([...new Set(a.parts.map(p=>p.lessons[0]))]):[...new Set(a.parts.map(p=>p.module))].sort();
-  const rows=sub.map(id=>({id,s:stu(id),sc:score(a,id),g:groupStats(a,[id],byL?'lesson':'module')})).sort((x,y)=>x.sc-y.sc);
-  const mods=[...new Set(keys.map(k=>k.includes('-')?lessonKey(k).code:k))];
-  h+=`<div class="card"><div class="card-b tw"><table class="heat"><thead><tr><th style="text-align:left">Student</th><th style="text-align:left">Score</th>${keys.map(k=>`<th class="rot"><div data-tip="${tip(byL?lessonLabel(k):modLabel(k))}">${esc(byL?lessonLabel(k,true):k)}</div></th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr class="click" data-act="tstudent" data-sid="${r.id}"><td class="nm"><b>${esc(r.s.name)}</b> <span class="xs muted">${r.s.cls}</span></td><td class="sc"><span class="strong">${r.sc}</span><span class="xs muted">/${a.total}</span><span class="minibar"><i style="width:${100*r.sc/a.total}%"></i></span></td>${keys.map(k=>{const o=r.g[k];if(!o||!o.max)return '<td class="h x">·</td>';return `<td class="h t-${st(o.pct)}" data-tip="${tip(r.s.name,(byL?lessonLabel(k):modLabel(k))+': '+o.got+'/'+o.max+' marks')}">${o.pct}</td>`}).join('')}</tr>`).join('')}</tbody></table>
+  let h=`<div class="ph"><div><div class="eyebrow">Students</div><h1>${esc(a.name.split(':')[0])} by student</h1><p class="desc">Each cell is a student's ${view==='pct'?'percentage':'marks'} on a ${byL?'lesson':'topic'}. Click a column heading to sort by it, or a name to open that student's report.</p></div>${tFilters()}</div>`;
+  h+=`<div class="band">
+   <div class="metric"><span class="lab">Recorded</span><span class="val">${done.length}<small> / ${pool.length}</small></span><span class="sub">${pool.length?pct(done.length,pool.length):0}% of ${esc(grpName())}</span><div class="meter"><i style="width:${pool.length?100*done.length/pool.length:0}%"></i></div></div>
+   <div class="metric ${miss.length?'alert':''}"><span class="lab">Not recorded</span><span class="val">${miss.length}</span><span class="sub">${miss.length?'<button type="button" class="linkbtn" data-act="tomiss">See who</button>':'Nobody missing'}</span></div>
+   <div class="metric"><span class="lab">No data at all</span><span class="val">${pool.filter(neverRecorded).length}</span><span class="sub">Not recorded any assessment</span></div>
+   <div class="metric"><span class="lab">Class mean</span><span class="val">${done.length?(view==='pct'?pct(avg(done.map(id=>score(a,id))),a.total)+'%':Math.round(avg(done.map(id=>score(a,id)))*10)/10+'<small> / '+a.total+'</small>'):'–'}</span><span class="sub">${done.length} student${done.length===1?'':'s'}</span></div></div>`;
+  h+=missingCard(a,miss);
+  const rows=pool.map(id=>({id,s:stu(id),sc:score(a,id),has:!!r[id],g:r[id]?groupStats(a,[id],byL?'lesson':'module'):{}}))
+    .filter(o=>show==='all'||(show==='miss'?!o.has:o.has));
+  const nameCmp=(x,y)=>surname(x.s.name).localeCompare(surname(y.s.name))||x.s.name.localeCompare(y.s.name);
+  const cellV=(o,k)=>{const g=o.g[k];return g&&g.max?g.pct:null};
+  const numSort=(f,dir)=>(x,y)=>{const a1=f(x),b1=f(y);if(a1==null&&b1==null)return nameCmp(x,y);if(a1==null)return 1;if(b1==null)return -1;return dir*(a1-b1)||nameCmp(x,y)};
+  const cmp=sort==='low'?numSort(o=>o.has?o.sc:null,1):sort==='high'?numSort(o=>o.has?o.sc:null,-1):sort==='sur'?nameCmp:sort==='sur-d'?(x,y)=>-nameCmp(x,y):sort==='first'?(x,y)=>x.s.name.localeCompare(y.s.name):sort==='cls'?(x,y)=>String(x.s.cls).localeCompare(String(y.s.cls))||nameCmp(x,y):sort==='miss'?(x,y)=>(x.has-y.has)||nameCmp(x,y)
+    :sort.startsWith('k:')?numSort(o=>cellV(o,sort.slice(2)),S.stDir||1):nameCmp;
+  rows.sort(cmp);
+  const seg=(id,opts,cur)=>`<div class="seg" role="group">${opts.map(([v,l])=>`<button type="button" data-act="${id}" data-v="${v}" aria-pressed="${v===cur}">${l}</button>`).join('')}</div>`;
+  const sortOpts=[['low','Total: lowest first'],['high','Total: highest first'],['sur','Surname A to Z'],['sur-d','Surname Z to A'],['first','First name A to Z'],['cls','Class'],['miss','Not recorded first']];
+  const arrow=k=>sort===k?(k.startsWith('k:')?(S.stDir===-1?' ▼':' ▲'):''):'';
+  const hsort=(k,label)=>`<button type="button" class="hs ${sort===k||(k==='low'&&sort==='high')||(k==='sur'&&sort==='sur-d')?'on':''}" data-act="stsort" data-v="${k}">${label}</button>`;
+  h+=`<div class="card"><div class="card-h stbar"><div class="row" style="gap:14px;flex-wrap:wrap;align-items:flex-end">
+     <div class="fl"><span>Show as</span>${seg('stview',[['pct','Percentages'],['marks','Marks']],view)}</div>
+     <div class="fl"><span>Students</span>${seg('stshow',[['all',`All ${pool.length}`],['done',`Recorded ${done.length}`],['miss',`Not recorded ${miss.length}`]],show)}</div>
+     <label class="fl"><span>Order by</span><select id="st-sort">${sortOpts.map(([v,l])=>`<option value="${v}" ${v===sort?'selected':''}>${l}</option>`).join('')}${sort.startsWith('k:')?`<option value="${esc(sort)}" selected>${esc(byL?lessonLabel(sort.slice(2),true):sort.slice(2))} (${S.stDir===-1?'highest':'lowest'} first)</option>`:''}</select></label></div></div>
+   <div class="card-b tw">${rows.length?`<table class="heat ${view==='marks'?'mk':''}"><thead><tr><th style="text-align:left">${hsort(sort==='sur'?'sur-d':'sur','Student'+(sort==='sur'?' ▲':sort==='sur-d'?' ▼':''))}</th><th style="text-align:left">${hsort(sort==='low'?'high':'low','Total'+(sort==='low'?' ▲':sort==='high'?' ▼':''))}</th>${keys.map(k=>`<th class="rot"><div data-tip="${tip(byL?lessonLabel(k):modLabel(k),'Click to sort by this')}"><button type="button" class="hs ${sort==='k:'+k?'on':''}" data-act="stsort" data-v="k:${esc(k)}">${esc(byL?lessonLabel(k,true):k)}${arrow('k:'+k)}</button></div></th>`).join('')}</tr></thead><tbody>${rows.map(o=>{
+      if(!o.has)return `<tr class="miss"><td class="nm"><b>${esc(o.s.name)}</b> <span class="xs muted">${esc(o.s.cls||'')}</span></td><td class="sc"><span class="chip warn">Not recorded</span></td><td class="h none" colspan="${keys.length}">${neverRecorded(o.id)?'No results on any assessment yet':`No ${esc(a.id)} results yet`}</td></tr>`;
+      const tv=view==='pct'?`<span class="strong">${pct(o.sc,a.total)}%</span><span class="xs muted"> ${o.sc}/${a.total}</span>`:`<span class="strong">${o.sc}</span><span class="xs muted">/${a.total}</span>`;
+      return `<tr class="click" data-act="tstudent" data-sid="${o.id}"><td class="nm"><b>${esc(o.s.name)}</b> <span class="xs muted">${esc(o.s.cls||'')}</span></td><td class="sc">${tv}<span class="minibar"><i style="width:${100*o.sc/a.total}%"></i></span></td>${keys.map(k=>{const g=o.g[k];if(!g||!g.max)return '<td class="h x">·</td>';return `<td class="h t-${st(g.pct)}" data-tip="${tip(o.s.name,(byL?lessonLabel(k):modLabel(k))+': '+g.got+'/'+g.max+' marks ('+g.pct+'%)')}">${view==='pct'?g.pct:`${g.got}<small>/${g.max}</small>`}</td>`}).join('')}</tr>`}).join('')}</tbody></table>`:`<div class="empty">${show==='miss'?'Everyone has recorded.':'No students to show.'}</div>`}
   ${statusLegend().replace('class="legend"','class="legend" style="margin-top:18px"')}
   <div class="xs muted" style="margin-top:10px;line-height:1.7">${keys.map(k=>`<b>${esc(byL?lessonLabel(k,true):k)}</b> ${esc(keyName(k))}`).join(' · ')}</div></div></div>`;
   return h;
@@ -782,7 +819,11 @@ document.addEventListener('click',async e=>{
   else if(act==='submit'){submitDraft();return}
   else if(act==='tstudent'){S.tStudent=t.dataset.sid;top0()}
   else if(act==='tback'){S.tStudent=null}
-  else if(act==='copy'){if(t.dataset.what==='plan')copy(planText(),'Plan copied');else{const a=asm(S.aid);const r=respMap(a.id);copy(sidsIn(S.cls).filter(id=>!r[id]).map(id=>stu(id).email).join('; '),'Email addresses copied')}return}
+  else if(act==='tomiss'){document.getElementById('missing')?.scrollIntoView({behavior:'smooth',block:'center'});return}
+  else if(act==='stview'){S.stView=t.dataset.v}
+  else if(act==='stshow'){S.stShow=t.dataset.v}
+  else if(act==='stsort'){const v=t.dataset.v;if(v.startsWith('k:')){S.stDir=S.stSort===v?-(S.stDir||1):1}S.stSort=v;const y=window.scrollY;save();render();window.scrollTo(0,y);return}
+  else if(act==='copy'){if(t.dataset.what==='plan')copy(planText(),'Plan copied');else{const a=asm(S.aid);const r=respMap(a.id);copy(expectedFor(a,S.cls).filter(id=>!r[id]).map(id=>stu(id).email).join('; '),'Email addresses copied')}return}
   else if(act==='newasm'){S.editing={name:'',date:new Date().toISOString().slice(0,10),classes:classes().filter(c=>!c.archived).map(c=>c.id),parts:[{q:'1',p:'',topic:'',detail:'',marks:4,module:'A&S 02',lessons:[],textbook:''}]}}
   else if(act==='viewasm'){const a=asm(t.dataset.aid);S.editing=Object.assign(JSON.parse(JSON.stringify(a)),{readonly:true})}
   else if(act==='closeed'){S.editing=null}
@@ -810,6 +851,7 @@ document.addEventListener('change',async e=>{const t=e.target;
   if(t.id==='cmb-per'||t.id==='cmb-sort'){if(t.id==='cmb-per')S.cmbPer=+t.value;else S.cmbSort=t.value;const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(t.dataset.act==='bsel'){S.sel=S.sel||new Set();t.checked?S.sel.add(t.dataset.q):S.sel.delete(t.dataset.q);const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(t.dataset.act==='pdfset'){const cur=PDFSET();cur[t.dataset.k]=t.checked;const {error}=await sb.from('app_settings').upsert({key:'student_pdfs',value:cur,updated_at:new Date().toISOString()});if(error){toast("Couldn't save that setting");t.checked=!t.checked;return}DB.settings.student_pdfs=cur;toast(t.checked?'Turned on for students':'Turned off for students');render();return}
+  if(t.id==='st-sort'){if(t.value!==S.stSort&&t.value.startsWith('k:'))S.stDir=1;S.stSort=t.value;const y=window.scrollY;save();render();window.scrollTo(0,y);return}
   if(t.id==='pv-sid'){S.previewSid=t.value;S.sAid=null;render();return}
   if(t.dataset.act==='status'){const {error}=await sb.from('assessments').update({status:t.value}).eq('id',t.dataset.aid);if(error){toast("Couldn't change the status");return}await refresh('Status updated');return}
   if(t.dataset.act==='archive'){const {error}=await sb.from('classes').update({archived:!t.checked}).eq('id',t.dataset.c);if(error){toast("Couldn't update the class");return}await refresh();return}
