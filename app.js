@@ -507,7 +507,7 @@ function tFilters(showAid=true){const as=assessments();
 const grpName=()=>S.cls==='all'?'all classes':S.cls;
 function tReport(){
   const a=asm(S.aid);if(!a)return noAssess();S.aid=a.id;const sub=submitted(a.id,S.cls);const all=[...new Set(expectedFor(a,S.cls).concat(sub))];const miss0=all.filter(id=>!respMap(a.id)[id]);
-  let h=`<div class="ph"><div><div class="eyebrow">Assessment report</div><h1>${esc(a.name)}</h1><p class="desc">${grpName()} · ${a.parts.length} question parts · ${a.total} marks · sat w/c ${fmDate(a.date)}</p></div>${tFilters()}</div>`;
+  let h=`<div class="ph"><div><div class="eyebrow">Assessment report</div><h1>${esc(a.name)}</h1><p class="desc">${grpName()} · ${a.parts.length} question parts · ${a.total} marks · sat w/c ${fmDate(a.date)}</p></div><div class="row" style="align-items:flex-end">${tFilters()}${sub.length?`<button class="btn sec" data-act="repdl">${IC.pages||''}Planning report</button>`:''}</div></div>`;
   if(!sub.length)return h+`<div class="empty">No results recorded yet for this group.</div>`+missingCard(a,miss0);
   const scores=sub.map(id=>score(a,id)).sort((x,y)=>x-y);const mean=avg(scores),med=median(scores);const q1=scores[Math.floor(scores.length*.25)],q3=scores[Math.floor(scores.length*.75)];
   const byL=hasLessons(a);const pr=priorities(a,sub);const weakest=[...pr].sort((x,y)=>x.pct-y.pct)[0];
@@ -630,8 +630,9 @@ function planData(){const a=asm(S.aid);const sub=submitted(a.id,S.cls);const pr=
 function kc(o){return o.k.includes('-')?lessonKey(o.k):{code:o.k,n:null}}
 function tPlan(){
   if(!asm(S.aid))return noAssess();const {a,sub,whole,groups}=planData();
-  let h=`<div class="ph"><div><div class="eyebrow">Revision plan</div><h1>Starters and homework from ${esc(a.id)}</h1><p class="desc">Built from ${grpName()}'s results. Copy it straight into your starter and Link Back planning.</p></div><div class="row" style="align-items:flex-end">${tFilters()}<button class="btn" data-act="copy" data-what="plan">${IC.copy}Copy plan</button></div></div>`;
+  let h=`<div class="ph"><div><div class="eyebrow">Revision plan</div><h1>Starters and homework from ${esc(a.id)}</h1><p class="desc">Built from the results for ${grpName()}. Copy it straight into your starter and Link Back planning.</p></div><div class="row" style="align-items:flex-end">${tFilters()}<button class="btn" data-act="copy" data-what="plan">${IC.copy}Copy plan</button></div></div>`;
   if(!sub.length)return h+`<div class="empty">No results yet.</div>`;
+  h+=planDlCard()+'<div class="mt"></div>';
   h+=`<div class="card"><div class="card-h"><div><h2>Whole-class starters</h2><p class="hint">The three lowest ${hasLessons(a)?'lessons':'topics'}, with two past-paper questions each. Questions already used in a Link Back or starter are pushed down the list.</p></div>${sheetBtns(whole.flatMap(o=>{const K=kc(o);return bankFor(K.code,K.n,2,false,'_').items.map(q=>q.id)}),a.name+' starters')}</div><div class="card-b">${whole.map((o,i)=>{const K=kc(o);const b=bankFor(K.code,K.n,2,false,'_').items;return `<div class="rk" style="grid-template-columns:28px minmax(0,1fr) 64px;align-items:start"><div class="n">${i+1}</div><div><div class="t">${esc(keyName(o.k))} <span class="xs muted">${keyCode(o.k)}</span></div>${b.map(q=>qItem(q,'_',false,true)).join('')}</div><div class="pc">${chip(o.pct,o.pct+'%')}</div></div>`}).join('')}</div></div>`;
   h+=`<div class="card mt"><div class="card-h"><div><h2>Targeted homework groups</h2><p class="hint">Students under 50% on a ${hasLessons(a)?'lesson':'topic'}, with three questions to set. A student can be in more than one group.</p></div></div><div class="card-b"><div class="grid c2">${groups.map(o=>{const K=kc(o);const b=bankFor(K.code,K.n,3,false,'_').items;return `<div class="focus" style="margin:0"><div class="fh"><div><h3>${esc(keyName(o.k))}</h3><div class="mod">${esc(keyCode(o.k))} · ${o.pct}% overall</div></div><span class="chip brand">${o.below.length} students</span></div><div style="padding:14px 20px 4px"><div class="xs strong muted" style="letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">Students</div><div class="row" style="gap:6px">${o.below.map(id=>`<span class="chip plain">${esc(stu(id).name)}</span>`).join('')}</div>${o.why?`<p class="xs muted" style="margin-top:10px">Most common reason: ${esc(STATIC.reasons[o.why[0]])}</p>`:''}</div><div class="qs"><div class="qs-h">${sheetBtns(b.map(q=>q.id),keyName(o.k)+' homework')}</div>${b.map(q=>qItem(q,'_',false,true)).join('')}</div></div>`}).join('')}</div></div></div>`;
   return h;
@@ -701,6 +702,96 @@ function bankBrowser(isT){
   <div class="card"><div class="card-h"><div><h2>${esc(modLabel(S.bankMod))}</h2><p class="hint">${items.length} questions${S.bankLes!=='all'?' matched to this lesson':''}.</p></div><div class="filters"><label class="fl"><span>SoL topic</span><select id="bk-mod">${STATIC.modules.filter(x=>counts[x.code]).map(x=>`<option value="${x.code}" ${x.code===S.bankMod?'selected':''}>${x.code} ${esc(x.name)} (${counts[x.code]})</option>`).join('')}</select></label>${m?.lessons?`<label class="fl"><span>Lesson</span><select id="bk-les"><option value="all">All lessons</option>${m.lessons.map((l,i)=>`<option value="${i+1}" ${S.bankLes==String(i+1)?'selected':''}>L${i+1} ${esc(l)}</option>`).join('')}</select></label>`:''}<label class="fl"><span>Papers</span><select id="bk-spec"><option value="all" ${S.bankSpec==='all'?'selected':''}>All</option><option value="H640" ${S.bankSpec==='H640'?'selected':''}>Current spec (H640)</option><option value="old" ${S.bankSpec==='old'?'selected':''}>Legacy MEI</option></select></label>${shown.length?`<button class="btn sec sm" data-act="bselall" data-on="${allOn?0:1}">${allOn?'Untick all':'Tick all shown'}</button>`:''}</div></div><div class="card-b">${items.slice(0,S.bankMore?1000:60).map(row).join('')}${items.length>60&&!S.bankMore?`<button class="btn sec sm" data-act="bmore" style="margin-top:12px">Show all ${items.length}</button>`:''}</div></div>`;
 }
 
+// ================= planning report download (for a planning agent) =================
+function band(p){return p==null?'Not assessed':p>=70?'Secure':p>=50?'Developing':'Priority'}
+function r1(x){return Math.round(x*10)/10}
+function planReport(a,cls,withNames){
+  const byL=hasLessons(a),by=byL?'lesson':'module',unit=byL?'lesson':'topic';
+  const gname=cls==='all'?'the whole year group (all classes)':cls, gshort=cls==='all'?'the year group':cls;
+  const sub=submitted(a.id,cls),exp=[...new Set(expectedFor(a,cls).concat(sub))],miss=exp.filter(id=>!respMap(a.id)[id]);
+  const yr=cls==='all'?null:groupStats(a,submitted(a.id,'all'),by);
+  const nm=ids=>ids.map(id=>stu(id).name).sort((x,y)=>surname(x).localeCompare(surname(y))).join(', ');
+  const L=[];const P=s=>L.push(s);
+  P(`# Planning report: ${a.name}`);P('');
+  P(`**Group:** ${gname}  `);P(`**Assessment:** ${a.name}${a.date?`, sat w/c ${fmDate(a.date)}`:''}  `);
+  P(`**Paper:** ${a.parts.length} question parts, ${a.total} marks  `);
+  P(`**Report made:** ${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})} from the AUMS Assessment Tracker  `);
+  P(`**Specification:** OCR MEI A level Mathematics (H640) and Further Mathematics, taught through the AUMS Year 12 scheme of learning (SoL)`);P('');
+  if(!sub.length){P(`No results have been recorded for ${gname} yet, so there is nothing to plan from.`);return L.join('\n')}
+  const sc=sub.map(id=>score(a,id)),mean=avg(sc);
+  P(`## Headline results`);P('');
+  P(`| Measure | Value |`);P(`|---|---|`);
+  P(`| Students with results | ${sub.length} of ${exp.length} |`);
+  P(`| Average score | ${r1(mean)} out of ${a.total} (${pct(mean,a.total)}%) |`);
+  P(`| Median score | ${median(sc)} out of ${a.total} |`);
+  P(`| Range | ${Math.min(...sc)} to ${Math.max(...sc)} |`);
+  if(yr){const ys=submitted(a.id,'all').map(id=>score(a,id));P(`| Year group average | ${r1(avg(ys))} out of ${a.total} (${pct(avg(ys),a.total)}%) |`)}
+  P('');
+  if(miss.length)P(`**Note:** ${miss.length} student${miss.length===1?' has':'s have'} not recorded results yet${withNames?` (${nm(miss)})`:''}, so they are not included in these figures.`),P('');
+  P(`## How to use this report`);P('');
+  P(`This report is written so a planning assistant (or a colleague) can build **starters** and **Link Back homework** from it. Every ${unit} below says exactly how ${gshort} did on it in ${a.id}, which is the reason it is, or isn't, being included.`);P('');
+  P(`- **Priority** means the group average on that ${unit} was below 50%. Plan starters and homework on these first.`);
+  P(`- **Developing** means 50% to 69%. Worth revisiting in starters.`);
+  P(`- **Secure** means 70% or above. Only needed as light retrieval practice.`);
+  P(`- "Average" always means the percentage of the available marks that the group gained on that ${unit} in ${a.id}.`);P('');
+  const pr=priorities(a,sub).filter(o=>o.max);const totalLost=pr.reduce((t,o)=>t+o.lost,0)||1;
+  const why=o=>{const per=r1(o.got/sub.length),outOf=r1(o.max/sub.length);let s=`In ${a.id}, the average for ${gshort} on this ${unit} was **${o.pct}%** (${per} out of ${outOf} marks per student, ${o.got} of ${o.max} marks in total). `;
+    s+=o.pct<50?`That is below 50%, which is why it is a priority.`:o.pct<70?`That is between 50% and 69%, so it is not yet secure, which is why it is included.`:`That is 70% or above, so it is secure and only needs light retrieval.`;
+    if(yr&&yr[o.k]&&yr[o.k].max){const d=o.pct-yr[o.k].pct;s+=` The year group average was ${yr[o.k].pct}%, so ${cls} was ${d===0?'in line with the year group':Math.abs(d)+' percentage points '+(d>0?'above':'below')+' it'}.`}
+    return s};
+  const conf=o=>{const r=respMap(a.id);let n=0,c=0;sub.forEach(id=>o.parts.forEach(p=>{const x=r[id]?.ans?.[p.id];if(!x||!x.c)return;n++;if((x.c==='A'||x.c==='B')&&x.s/p.marks<0.7)c++}));return n?`${c} of ${n} student ratings said they felt confident but still gained under 70% of the marks.`:''};
+  const block=(o,i)=>{const K=o.k.includes('-')?lessonKey(o.k):{code:o.k,n:null};const m=MOD[K.code]||{};
+    P(`### ${i}. ${keyName(o.k)} (${keyCode(o.k)}): ${o.pct}%, ${band(o.pct)}`);P('');
+    P(`- **Why it's included:** ${why(o)}`);
+    if(byL)P(`- **SoL topic:** ${K.code} ${m.name||''}${m.ref?`, textbook ${m.ref}`:''}${m.fm?' (Further Maths)':''}`);
+    else if(m.ref)P(`- **Textbook:** ${m.ref}${m.fm?' (Further Maths)':''}`);
+    P(`- **Marks lost:** ${o.lost}, which is ${pct(o.lost,totalLost)}% of all the marks ${gshort} lost on this paper`);
+    P(`- **Students under 50% on it:** ${o.below.length} of ${sub.length}${withNames&&o.below.length?` (${nm(o.below)})`:''}`);
+    const cf=conf(o);if(cf)P(`- **Confidence:** ${cf}`);
+    const rs=reasonsForParts(a,sub,o.parts).slice(0,2);if(rs.length)P(`- **Main reasons students gave for losing marks:** ${rs.map(([k,v])=>`${STATIC.reasons[k]} (${v} mark${v===1?'':'s'})`).join('; ')}`);
+    P(`- **Where it came up in ${a.id}:**`);
+    o.parts.forEach(p=>{const ps=partStats(a,sub).find(x=>x.p.id===p.id);P(`  - Q${qlab(p)} (${p.marks} mark${p.marks===1?'':'s'}): ${p.topic}${p.detail?`. ${p.detail}`:''}. Average ${ps?.pct??'n/a'}%${p.textbook?`. Textbook: ${p.textbook}`:''}`)});
+    const bk=bankFor(K.code,K.n,3,false,'_').items;
+    if(bk.length){P(`- **Past-paper questions in the tracker's bank on this ${unit}:**`);bk.forEach(b=>P(`  - ${bankSpec(b)}, ${bankSrc(b).replace(/ · /g,', ')}${b.marks?` (${b.marks} marks)`:''}: ${b.desc}`))}
+    P('')};
+  const weakest=[...pr].sort((x,y)=>x.pct-y.pct);
+  const starters=weakest.filter(o=>o.pct<70).slice(0,5);
+  const homework=[...pr].filter(o=>o.below.length).sort((x,y)=>y.below.length-x.below.length||x.pct-y.pct).slice(0,5);
+  P(`## Recommended for whole-class starters`);P('');
+  if(!starters.length)P(`Every ${unit} was secure (70% or above). Use starters for mixed retrieval across the paper.`),P('');
+  else{P(`The ${starters.length} ${unit}${starters.length===1?'':'s'} with the lowest averages for ${gshort}. Each one says why it is here.`);P('');starters.forEach((o,i)=>block(o,i+1))}
+  P(`## Recommended for Link Back homework`);P('');
+  if(!homework.length)P(`No ${unit} had students under 50%.`),P('');
+  else{P(`The ${unit}s where the most students scored under 50%. These suit Link Back homework, either for the whole group or for the students listed.`);P('');
+    homework.forEach((o,i)=>{P(`${i+1}. **${keyName(o.k)} (${keyCode(o.k)})**: ${o.below.length} of ${sub.length} students under 50%. Group average ${o.pct}% in ${a.id}.${withNames?` Students: ${nm(o.below)}.`:''}`)});P('');
+    const extra=homework.filter(o=>!starters.includes(o));if(extra.length){P(`Details for the homework ${unit}s not already covered above:`);P('');extra.forEach((o,i)=>block(o,starters.length+i+1))}}
+  P(`## Every ${unit} on the paper`);P('');
+  P(`| ${byL?'Lesson':'Topic'} | SoL code | Average in ${a.id} | Status |${yr?' Year group |':''}`);P(`|---|---|---|---|${yr?'---|':''}`);
+  weakest.forEach(o=>P(`| ${keyName(o.k)} | ${keyCode(o.k)} | ${o.pct}% | ${band(o.pct)} |${yr?` ${yr[o.k]?.pct??'n/a'}% |`:''}`));P('');
+  const secure=weakest.filter(o=>o.pct>=70);if(secure.length)P(`Secure, so not a focus: ${secure.map(o=>`${keyName(o.k)} (${o.pct}%)`).join(', ')}.`),P('');
+  if(cls==='all'){const cl=classes().filter(c=>submitted(a.id,c.id).length);if(cl.length>1){const gc=cl.map(c=>groupStats(a,submitted(a.id,c.id),by));
+    P(`## Classes side by side`);P('');P(`| ${byL?'Lesson':'Topic'} | ${cl.map(c=>c.id).join(' | ')} | Year group |`);P(`|---|${cl.map(()=>'---|').join('')}---|`);
+    weakest.forEach(o=>P(`| ${keyName(o.k)} | ${gc.map(g=>g[o.k]&&g[o.k].max?g[o.k].pct+'%':'n/a').join(' | ')} | ${o.pct}% |`));P('')}}
+  P(`## Question by question`);P('');P(`| Question | Marks | Topic | SoL | Average |`);P(`|---|---|---|---|---|`);
+  partStats(a,sub).forEach(s=>P(`| Q${qlab(s.p)} | ${s.p.marks} | ${s.p.topic} | ${s.p.lessons[0]?lessonLabel(s.p.lessons[0],true):s.p.module} | ${s.pct??'n/a'}% |`));P('');
+  const {t,who}=reasonTotals(a,sub);const rs=Object.entries(t).sort((x,y)=>y[1]-x[1]).slice(0,6);
+  if(rs.length){P(`## Exam technique`);P('');P(`Reasons students gave for losing marks, most marks first. Worth building into starters as "spot the mistake" tasks.`);P('');rs.forEach(([k,v])=>P(`- ${STATIC.reasons[k]}: ${v} mark${v===1?'':'s'}, ${who[k].size} student${who[k].size===1?'':'s'}`));P('')}
+  P(`## Suggested prompt`);P('');
+  P(`> Using this report, plan 5 starters for ${gshort} on the Priority and Developing ${unit}s above, in the order given, and a Link Back homework on the ${unit}s where most students scored under 50%. For each starter and homework, say which ${unit} it targets and quote the average from ${a.id} as the reason. Match OCR MEI H640 style and use the textbook references given.`);
+  return L.join('\n')}
+function dlText(name,text){const blob=new Blob([text],{type:'text/markdown;charset=utf-8'});const url=URL.createObjectURL(blob);const x=document.createElement('a');x.href=url;x.download=name.replace(/[\\/:*?"<>|]/g,'')+'.md';document.body.appendChild(x);x.click();x.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)}
+function downloadPlan(aid,cls,withNames){const a=asm(aid);if(!a)return;
+  const list=cls==='each'?classes().filter(c=>a.classes.includes(c.id)&&submitted(a.id,c.id).length).map(c=>c.id):[cls];
+  if(!list.length){toast('No class has results for this yet');return}
+  list.forEach((c,i)=>setTimeout(()=>dlText(`AUMS ${a.id} planning report - ${c==='all'?'Year group':c}`,planReport(a,c,withNames)),i*400));
+  toast(list.length>1?`Downloading ${list.length} class reports`:'Report downloaded')}
+function planDlCard(){const a=asm(S.aid);if(!a)return '';const cls=classes().filter(c=>a.classes.includes(c.id));const cur=S.dlCls||(S.cls==='all'?'all':S.cls);
+  return `<div class="card dlcard"><div class="card-h"><div><h2>Download a planning report</h2><p class="hint">A report for ${esc(a.id)} to give to an AI agent (or a colleague) to plan starters and Link Back homework. Every topic says what the average was in ${esc(a.id)}, which is why it's been included.</p></div></div>
+   <div class="card-b"><form id="plandl" class="row" style="gap:14px;align-items:flex-end;flex-wrap:wrap">
+    <label class="fl"><span>Group</span><select id="dl-cls"><option value="all" ${cur==='all'?'selected':''}>Whole year group</option>${cls.map(c=>`<option value="${c.id}" ${cur===c.id?'selected':''}>${c.id}</option>`).join('')}${cls.length>1?`<option value="each" ${cur==='each'?'selected':''}>Every class, one file each</option>`:''}</select></label>
+    <label class="row small" style="gap:6px;min-height:38px"><input type="checkbox" id="dl-names" ${S.dlNames?'checked':''}> Include student names</label>
+    <button class="btn" type="submit">${IC.pages||''}Download report</button></form>
+    <p class="xs muted" style="margin-top:10px">Downloads as a Markdown (.md) file, which AI tools read well. Leave names off if the agent only needs to plan whole-class work.</p></div></div>`}
 
 // ================= data loading =================
 async function fetchAll(make){let out=[],from=0;const size=1000;for(;;){const {data,error}=await make().range(from,from+size-1);if(error)throw error;out=out.concat(data||[]);if(!data||data.length<size)break;from+=size}return out}
@@ -820,6 +911,7 @@ document.addEventListener('click',async e=>{
   else if(act==='tstudent'){S.tStudent=t.dataset.sid;top0()}
   else if(act==='tback'){S.tStudent=null}
   else if(act==='tomiss'){document.getElementById('missing')?.scrollIntoView({behavior:'smooth',block:'center'});return}
+  else if(act==='repdl'){downloadPlan(S.aid,S.cls,false);return}
   else if(act==='stview'){S.stView=t.dataset.v}
   else if(act==='stshow'){S.stShow=t.dataset.v}
   else if(act==='stsort'){const v=t.dataset.v;if(v.startsWith('k:')){S.stDir=S.stSort===v?-(S.stDir||1):1}S.stSort=v;const y=window.scrollY;save();render();window.scrollTo(0,y);return}
@@ -874,6 +966,7 @@ document.addEventListener('input',e=>{const t=e.target;if(!DRAFT)return;
 });
 function busy(on){S.busy=on}
 document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target;const v=id=>(document.getElementById(id)?.value||'').trim();
+  if(f.id==='plandl'){S.dlCls=v('dl-cls');S.dlNames=!!document.getElementById('dl-names')?.checked;downloadPlan(S.aid,S.dlCls,S.dlNames);return}
   if(f.id==='signup'){const name=v('su-name'),email=v('su-email').toLowerCase(),pw=document.getElementById('su-pw').value,cls=v('su-cls');
     if(name.split(/\s+/).length<2)return setErr('su-err','Enter your first name and surname.');
     if(!/^[^@\s]+@aums\.ac\.uk$/.test(email))return setErr('su-err','Use your school email ending @aums.ac.uk.');
