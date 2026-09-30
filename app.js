@@ -9,7 +9,7 @@ const MOD={};STATIC.modules.forEach(m=>MOD[m.code]=m);
 const KEY='aums-tracker-ui-v1';
 let S={stab:'home',ttab:'report',aid:null,cls:'all',sAid:null,recAid:null,tStudent:null,bankMod:'C&M 00',bankLes:'all',editing:null,authTab:'signup',view:location.hash==='#staff'?'staff':'student',busy:false,recovery:false};
 try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved)Object.assign(S,saved,{editing:null,tStudent:null,busy:false,recovery:false,view:location.hash==='#staff'?'staff':'student'});}catch(e){}
-function save(){try{localStorage.setItem(KEY,JSON.stringify({stab:S.stab,ttab:S.ttab,aid:S.aid,cls:S.cls,sAid:S.sAid,bankMod:S.bankMod,authTab:S.authTab,stView:S.stView,stSort:S.stSort,stShow:S.stShow,stDir:S.stDir}))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify({stab:S.stab,ttab:S.ttab,aid:S.aid,cls:S.cls,sAid:S.sAid,bankMod:S.bankMod,authTab:S.authTab,stView:S.stView,stSort:S.stSort,stShow:S.stShow,stDir:S.stDir,dlFmt:S.dlFmt}))}catch(e){}}
 // DB cache
 let ROLE=null,ME=null,LOADED=false;
 let DB={classes:[],students:[],assessments:[],resp:{},agg:{},done:new Set(),doneAll:{},settings:{}};
@@ -507,7 +507,7 @@ function tFilters(showAid=true){const as=assessments();
 const grpName=()=>S.cls==='all'?'all classes':S.cls;
 function tReport(){
   const a=asm(S.aid);if(!a)return noAssess();S.aid=a.id;const sub=submitted(a.id,S.cls);const all=[...new Set(expectedFor(a,S.cls).concat(sub))];const miss0=all.filter(id=>!respMap(a.id)[id]);
-  let h=`<div class="ph"><div><div class="eyebrow">Assessment report</div><h1>${esc(a.name)}</h1><p class="desc">${grpName()} · ${a.parts.length} question parts · ${a.total} marks · sat w/c ${fmDate(a.date)}</p></div><div class="row" style="align-items:flex-end">${tFilters()}${sub.length?`<button class="btn sec" data-act="repdl">${IC.pages||''}Planning report</button>`:''}</div></div>`;
+  let h=`<div class="ph"><div><div class="eyebrow">Assessment report</div><h1>${esc(a.name)}</h1><p class="desc">${grpName()} · ${a.parts.length} question parts · ${a.total} marks · sat w/c ${fmDate(a.date)}</p></div><div class="row" style="align-items:flex-end">${tFilters()}${sub.length?`<button class="btn" data-act="repdl" data-fmt="pdf">${IC.pages||''}PDF report</button><button class="btn sec" data-act="repdl" data-fmt="md">${IC.copy||''}AI planning (.md)</button>`:''}</div></div>`;
   if(!sub.length)return h+`<div class="empty">No results recorded yet for this group.</div>`+missingCard(a,miss0);
   const scores=sub.map(id=>score(a,id)).sort((x,y)=>x-y);const mean=avg(scores),med=median(scores);const q1=scores[Math.floor(scores.length*.25)],q3=scores[Math.floor(scores.length*.75)];
   const byL=hasLessons(a);const pr=priorities(a,sub);const weakest=[...pr].sort((x,y)=>x.pct-y.pct)[0];
@@ -785,13 +785,197 @@ function downloadPlan(aid,cls,withNames){const a=asm(aid);if(!a)return;
   if(!list.length){toast('No class has results for this yet');return}
   list.forEach((c,i)=>setTimeout(()=>dlText(`AUMS ${a.id} planning report - ${c==='all'?'Year group':c}`,planReport(a,c,withNames)),i*400));
   toast(list.length>1?`Downloading ${list.length} class reports`:'Report downloaded')}
-function planDlCard(){const a=asm(S.aid);if(!a)return '';const cls=classes().filter(c=>a.classes.includes(c.id));const cur=S.dlCls||(S.cls==='all'?'all':S.cls);
-  return `<div class="card dlcard"><div class="card-h"><div><h2>Download a planning report</h2><p class="hint">A report for ${esc(a.id)} to give to an AI agent (or a colleague) to plan starters and Link Back homework. Every topic says what the average was in ${esc(a.id)}, which is why it's been included.</p></div></div>
+function planDlCard(){const a=asm(S.aid);if(!a)return '';const cls=classes().filter(c=>a.classes.includes(c.id));const cur=S.dlCls||(S.cls==='all'?'all':S.cls);const fmt=S.dlFmt||'pdf';
+  return `<div class="card dlcard"><div class="card-h"><div><h2>Download a report</h2><p class="hint">${fmt==='pdf'?`A printable question level analysis for ${esc(a.id)} with all the charts: topic facility, class comparisons, question-by-question facility, the weakest items and a starter and Link Back plan.`:`A text report for ${esc(a.id)} to give to an AI agent to plan starters and Link Back homework. Every topic says what the average was in ${esc(a.id)}, which is why it's been included.`}</p></div></div>
    <div class="card-b"><form id="plandl" class="row" style="gap:14px;align-items:flex-end;flex-wrap:wrap">
+    <div class="fl"><span>Format</span><div class="seg" role="group" aria-label="Report format"><button type="button" data-act="dlfmt" data-v="pdf" aria-pressed="${fmt==='pdf'}">PDF with charts</button><button type="button" data-act="dlfmt" data-v="md" aria-pressed="${fmt==='md'}">Markdown for AI</button></div></div>
     <label class="fl"><span>Group</span><select id="dl-cls"><option value="all" ${cur==='all'?'selected':''}>Whole year group</option>${cls.map(c=>`<option value="${c.id}" ${cur===c.id?'selected':''}>${c.id}</option>`).join('')}${cls.length>1?`<option value="each" ${cur==='each'?'selected':''}>Every class, one file each</option>`:''}</select></label>
     <label class="row small" style="gap:6px;min-height:38px"><input type="checkbox" id="dl-names" ${S.dlNames?'checked':''}> Include student names</label>
-    <button class="btn" type="submit">${IC.pages||''}Download report</button></form>
-    <p class="xs muted" style="margin-top:10px">Downloads as a Markdown (.md) file, which AI tools read well. Leave names off if the agent only needs to plan whole-class work.</p></div></div>`}
+    <button class="btn" type="submit">${IC.pages||''}Download ${fmt==='pdf'?'PDF':'.md file'}</button></form>
+    <p class="xs muted" style="margin-top:10px">${fmt==='pdf'?'The year group PDF compares every class. A class PDF compares that class with the year group. Names, if ticked, go on a separate last page.':'Markdown (.md) files are read well by AI tools, and open in Word or any text editor. Leave names off if the agent only needs to plan whole-class work.'}</p></div></div>`}
+
+// ================= QLA PDF report (charts drawn as vectors with pdf-lib) =================
+const QC={brand:'#610064',brand2:'#920088',orange:'#F93E26',pink:'#D30063',blue:'#5949EB',ink:'#1F1A24',grey:'#6B6573',light:'#9A93A0',line:'#E4D8E4',card:'#FAF5FA',good:'#2E9A63',warn:'#E9A21B',bad:'#E5483A',white:'#FFFFFF',track:'#F1EAF1'};
+const QK=['#920088','#F93E26','#5949EB','#D30063','#2E9A63'];
+function pdfTxt(s){return String(s??'').replace(/\$([^$]*)\$/g,'$1').replace(/\\(frac|sqrt|left|right|mathrm|text|displaystyle)/g,'').replace(/\\theta/g,'theta').replace(/\\pi/g,'pi').replace(/\\le(q)?/g,'<=').replace(/\\ge(q)?/g,'>=').replace(/\\[a-zA-Z]+/g,'').replace(/[{}]/g,'')
+  .replace(/²/g,'^2').replace(/³/g,'^3').replace(/⁻¹/g,'^-1').replace(/ⁿ/g,'^n').replace(/⁻/g,'^-').replace(/θ/g,'theta').replace(/π/g,'pi').replace(/[≤⩽]/g,'<=').replace(/[≥⩾]/g,'>=').replace(/[−–—]/g,'-').replace(/×/g,'x').replace(/÷/g,'/').replace(/√/g,'sqrt').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/…/g,'...').replace(/→/g,'->')
+  .replace(/[^\x20-\x7E°·£é]/g,'')}
+function hexC(h){const n=parseInt(h.slice(1),16);return PDFLib.rgb((n>>16&255)/255,(n>>8&255)/255,(n&255)/255)}
+const qcol=p=>p==null?QC.light:p>=70?QC.good:p>=50?QC.warn:QC.bad;
+function qlaData(a,cls){const byL=hasLessons(a),by=byL?'lesson':'module';const sub=submitted(a.id,cls);const exp=[...new Set(expectedFor(a,cls).concat(sub))];const miss=exp.filter(id=>!respMap(a.id)[id]);
+  const pr=priorities(a,sub).filter(o=>o.max);pr.forEach(o=>o.avail=o.parts.reduce((t,p)=>t+p.marks,0));
+  const ps=partStats(a,sub);const sc=sub.map(id=>score(a,id));
+  const yrSub=submitted(a.id,'all');const yr=cls==='all'?null:{g:groupStats(a,yrSub,by),m:groupStats(a,yrSub,'module'),ps:partStats(a,yrSub),sc:yrSub.map(id=>score(a,id))};
+  const cl=classes().filter(c=>(!a.classes.length||a.classes.includes(c.id))&&submitted(a.id,c.id).length&&(cls==='all'||c.id===cls));
+  const mods=[...new Set(a.parts.map(p=>p.module))].sort((x,y)=>modOrder(x)-modOrder(y));
+  const conf={};const r=respMap(a.id);a.parts.forEach(p=>{let n=0,c=0;sub.forEach(id=>{const x=r[id]?.ans?.[p.id];if(!x||!x.c)return;n++;if((x.c==='A'||x.c==='B')&&x.s/p.marks<0.7)c++});conf[p.id]={n,c}});
+  return {a,cls,byL,by,unit:byL?'lesson':'topic',sub,exp,miss,pr,ps,sc,yr,cl,mods,conf,gname:cls==='all'?'Year group':cls,gshort:cls==='all'?'the year group':cls}}
+async function makeQlaPdf(aid,cls,withNames){const a=asm(aid);if(!a)return null;const D=qlaData(a,cls);if(!D.sub.length)return null;
+  await loadPdfLib();const {PDFDocument,StandardFonts,degrees}=PDFLib;
+  const doc=await PDFDocument.create();doc.setTitle(pdfTxt(`${a.id} Question Level Analysis - ${D.gname}`));doc.setAuthor('AUMS Assessment Tracker');
+  const F=await doc.embedFont(StandardFonts.Helvetica),FB=await doc.embedFont(StandardFonts.HelveticaBold),FI=await doc.embedFont(StandardFonts.HelveticaOblique);
+  const W=595.28,H=841.89,M=34;let pg=null;const pages=[];
+  // ---- drawing helpers (t = distance from top of page)
+  const tw=(s,f,z)=>f.widthOfTextAtSize(pdfTxt(s),z);
+  const T=(s,x,t,z=9,o={})=>{let str=pdfTxt(s);const f=o.f||F;if(o.maxW&&f.widthOfTextAtSize(str,z)>o.maxW){let b=str;while(b.length>1&&f.widthOfTextAtSize(b.trimEnd()+'...',z)>o.maxW)b=b.slice(0,-1);str=b.trimEnd()+'...'}let xx=x;const w=f.widthOfTextAtSize(str,z);if(o.align==='right')xx=x-w;else if(o.align==='center')xx=x-w/2;
+    pg.drawText(str,{x:xx,y:H-t,size:z,font:f,color:hexC(o.c||QC.ink),rotate:o.rot?degrees(o.rot):undefined});return w};
+  const wrap=(s,f,z,maxW)=>{const words=pdfTxt(s).split(/\s+/).filter(Boolean);const out=[];let cur='';words.forEach(w=>{const nx=cur?cur+' '+w:w;if(f.widthOfTextAtSize(nx,z)>maxW&&cur){out.push(cur);cur=w}else cur=nx});if(cur)out.push(cur);return out};
+  const P=(s,x,t,z,maxW,o={})=>{const f=o.f||F;const lines=wrap(s,f,z,maxW).slice(0,o.max||99);if(o.max&&wrap(s,f,z,maxW).length>o.max){let l=lines[lines.length-1];while(l.length>3&&f.widthOfTextAtSize(l+'...',z)>maxW)l=l.slice(0,-1);lines[lines.length-1]=l+'...'}lines.forEach((l,i)=>T(l,x,t+i*(z*1.32),z,{f,c:o.c}));return lines.length*(z*1.32)};
+  const R=(x,t,w,h,c,o={})=>pg.drawRectangle({x,y:H-t-h,width:Math.max(w,0),height:Math.max(h,0),color:c?hexC(c):undefined,borderColor:o.bc?hexC(o.bc):undefined,borderWidth:o.bw||0});
+  const RR=(x,t,w,h,r,c,o={})=>{const p=`M ${r} 0 H ${w-r} Q ${w} 0 ${w} ${r} V ${h-r} Q ${w} ${h} ${w-r} ${h} H ${r} Q 0 ${h} 0 ${h-r} V ${r} Q 0 0 ${r} 0 Z`;pg.drawSvgPath(p,{x,y:H-t,color:c?hexC(c):undefined,borderColor:o.bc?hexC(o.bc):undefined,borderWidth:o.bw||0})};
+  const L=(x1,t1,x2,t2,c=QC.line,w=0.6,dash)=>pg.drawLine({start:{x:x1,y:H-t1},end:{x:x2,y:H-t2},thickness:w,color:hexC(c),dashArray:dash});
+  const newPage=(title,sub)=>{pg=doc.addPage([W,H]);pages.push(pg);R(0,0,W,58,QC.brand);R(0,58,W,4,QC.pink);R(W-150,58,150,4,QC.orange);
+    T(title,M,30,17,{f:FB,c:QC.white,maxW:W-2*M-150});if(sub)T(sub,M,47,9,{c:'#E9D5EA',maxW:W-2*M-150});};
+  const H2=(s,x,t,o={})=>{R(x,t-8.5,3,11,QC.pink);T(s,x+8,t,10.5,{f:FB,c:QC.brand,maxW:o.maxW})};
+  const clsLine=D.cls==='all'?`Classes ${D.cl.map(c=>c.id).join(' · ')}`:`Class ${D.cls} vs year group`;
+  // ---- common numbers
+  const mean=avg(D.sc),total=a.total;const lessons=[...D.pr].sort((x,y)=>y.pct-x.pct||x.k.localeCompare(y.k));const best=lessons[0],worst=lessons[lessons.length-1];
+  const kn=k=>keyName(k),kc=k=>keyCode(k);
+  // ======================= PAGE 1: overview =======================
+  newPage(`${a.id} · Question Level Analysis`,`${a.name.split(':').slice(1).join(':').trim()||a.name} · ${D.cls==='all'?'year group overview':D.cls+' class report'}`);
+  T(`${D.sub.length} student${D.sub.length===1?'':'s'}`,W-M,30,13,{f:FB,c:QC.white,align:'right'});T(clsLine,W-M,47,8.5,{c:'#E9D5EA',align:'right',maxW:150});
+  const kpi=[];const yrMean=D.yr?avg(D.yr.sc):null;
+  kpi.push({lab:'MEAN SCORE',val:`${r1(mean)}/${total}`,sub:`${pct(mean,total)}% · median ${median(D.sc)} · range ${Math.min(...D.sc)} to ${Math.max(...D.sc)}`,c:QC.brand2});
+  kpi.push(D.yr?{lab:'VS YEAR GROUP',val:`${pct(mean,total)-pct(yrMean,total)>0?'+':''}${pct(mean,total)-pct(yrMean,total)} pts`,sub:`year group mean ${pct(yrMean,total)}% (${r1(yrMean)}/${total})`,c:QC.blue}:{lab:'RECORDED',val:`${D.sub.length} of ${D.exp.length}`,sub:D.miss.length?`${D.miss.length} not recorded yet`:'everyone has recorded',c:QC.blue});
+  kpi.push({lab:`STRONGEST ${D.unit.toUpperCase()}`,val:kn(best.k),sub:`${best.pct}% over ${best.avail} mark${best.avail===1?'':'s'} · ${kc(best.k)}`,c:QC.good});
+  kpi.push({lab:`WEAKEST ${D.unit.toUpperCase()}`,val:kn(worst.k),sub:`${worst.pct}% over ${worst.avail} mark${worst.avail===1?'':'s'} · ${kc(worst.k)}`,c:QC.orange});
+  {const gap=10,cw=(W-2*M-3*gap)/4,t0=76,ch=72;kpi.forEach((k,i)=>{const x=M+i*(cw+gap);RR(x,t0,cw,ch,6,QC.card,{bc:QC.line,bw:0.6});R(x,t0+6,3.5,ch-12,k.c);
+    T(k.lab,x+12,t0+15,6.8,{f:FB,c:QC.grey,maxW:cw-18});let z=16;while(z>11&&tw(k.val,FB,z)>cw-20)z-=0.5;if(tw(k.val,FB,z)<=cw-20)T(k.val,x+12,t0+36,z,{f:FB,c:QC.brand});else P(k.val,x+12,t0+30,9.6,cw-20,{f:FB,c:QC.brand,max:2});P(k.sub,x+12,t0+55,6.6,cw-20,{c:QC.grey,max:2})})}
+  let p1b=400;
+  // performance by lesson: horizontal bars
+  {const t0=170;H2(`Performance by ${D.unit}  (bracket = marks available)`,M,t0);
+    const n=lessons.length,labW=176,x0=M+labW,x1=W-M-26,cw=x1-x0,top=t0+14,avail=300,rh=Math.min(21,avail/Math.max(n,1)),bh=Math.max(4,rh*0.62);
+    const bot=top+n*rh;[0,20,40,60,80,100].forEach(v=>{const x=x0+cw*v/100;L(x,top-2,x,bot,v===50||v===70?QC.light:QC.track,v===50||v===70?0.7:0.5,v===50||v===70?[2,2]:undefined);T(String(v),x,bot+10,7,{c:QC.grey,align:'center'})});
+    T('Facility: % of available marks gained'+(D.yr?`   |  tick = year group`:''),x0+cw/2,bot+21,7.2,{c:QC.grey,align:'center'});
+    lessons.forEach((o,i)=>{const t=top+i*rh;const lab=`${kn(o.k)}  (${o.avail})`;T(lab,x0-6,t+rh/2+2.6,Math.min(7.6,rh*0.62),{c:QC.ink,align:'right',maxW:labW-10});
+      R(x0,t+(rh-bh)/2,cw*Math.max(o.pct,0.6)/100,bh,qcol(o.pct));T(String(o.pct),x0+cw*o.pct/100+4,t+rh/2+2.6,Math.min(7.4,rh*0.6),{f:FB,c:QC.ink});
+      if(D.yr){const y=D.yr.g[o.k];if(y&&y.max){const x=x0+cw*y.pct/100;L(x,t+(rh-bh)/2-2,x,t+(rh+bh)/2+2,QC.ink,1.4)}}});p1b=bot;}
+  // bottom charts
+  {const t0=p1b+48,bw=(W-2*M-24)/2,chH=Math.max(180,H-58-t0-44);
+    // grouped columns helper
+    const grouped=(x,t,w,h,groups,series,title,yl)=>{H2(title,x,t,{maxW:w-10});const top=t+34,bot=top+h-48,ax=x+26,aw=w-30;
+      // legend
+      let lx=x+10;series.forEach(s=>{R(lx,t+12,8,8,s.c);lx+=12+T(s.name,lx+12,t+19,7.2,{c:QC.grey})+10});
+      [0,20,40,60,80,100].forEach(v=>{const y=bot-(bot-top)*v/100;L(ax,y,ax+aw,y,QC.track,0.5);T(String(v),ax-4,y+2.5,6.8,{c:QC.grey,align:'right'})});
+      T(yl,x+4,top+(bot-top)/2+20,6.8,{c:QC.grey,rot:90});
+      const gw=aw/groups.length,inner=gw*0.78,sw=inner/series.length;
+      groups.forEach((g,gi)=>{const gx=ax+gi*gw+(gw-inner)/2;series.forEach((s,si)=>{const v=s.vals[gi];if(v==null)return;const hh=(bot-top)*v/100;R(gx+si*sw+0.5,bot-hh,sw-1,hh,s.c);if(sw>9)T(String(v),gx+si*sw+sw/2,bot-hh-2.5,Math.min(6.6,sw*0.7),{f:FB,c:s.c,align:'center'})});
+        T(g,ax+gi*gw+gw/2,bot+10,7,{c:QC.ink,align:'center',maxW:gw})});L(ax,bot,ax+aw,bot,QC.light,0.7)};
+    const mStat=(sids,m)=>{const g=groupStats(a,sids,'module')[m];return g&&g.max?g.pct:null};
+    if(D.cls==='all'){
+      const series=D.cl.map((c,i)=>({name:c.id,c:QK[i%QK.length],vals:D.mods.map(m=>mStat(submitted(a.id,c.id),m))})).concat([{name:'All',c:QC.brand,vals:D.mods.map(m=>mStat(D.sub,m))}]);
+      grouped(M,t0,bw,chH,D.mods,series,'SoL topic facility, by class','Facility %');
+      // mean by class with whiskers
+      const x=M+bw+24,t=t0;H2('Mean score by class, with range',x,t,{maxW:bw-6});T('Bar = class mean. Line = lowest to highest score.',x+8,t+19,7,{c:QC.grey});const top=t+34,bot=top+chH-48,ax=x+26,aw=bw-30;
+      const tick=total<=50?10:20;for(let v=0;v<=total;v+=tick){const y=bot-(bot-top)*v/total;L(ax,y,ax+aw,y,QC.track,0.5);T(String(v),ax-4,y+2.5,6.8,{c:QC.grey,align:'right'})}
+      T(`Score / ${total}`,x+4,top+(bot-top)/2+20,6.8,{c:QC.grey,rot:90});
+      const cw2=aw/Math.max(D.cl.length,1);D.cl.forEach((c,i)=>{const s=submitted(a.id,c.id).map(id=>score(a,id));const m=avg(s),lo=Math.min(...s),hi=Math.max(...s);const cx=ax+i*cw2+cw2/2,bw2=Math.min(46,cw2*0.55);
+        const y=v=>bot-(bot-top)*v/total;R(cx-bw2/2,y(m),bw2,bot-y(m),QK[i%QK.length]);L(cx,y(hi),cx,y(lo),QC.grey,0.9);L(cx-5,y(hi),cx+5,y(hi),QC.grey,0.9);L(cx-5,y(lo),cx+5,y(lo),QC.grey,0.9);
+        T(String(r1(m)),cx-bw2/2+4,y(m)+11,8,{f:FB,c:QC.white});T(`${c.id} (${s.length})`,cx,bot+10,7,{align:'center'})});
+      const ym=bot-(bot-top)*mean/total;L(ax,ym,ax+aw,ym,QC.orange,0.9,[3,2]);T(`year mean ${r1(mean)}`,ax+aw,top-6,6.8,{f:FB,c:QC.orange,align:'right'});L(ax+aw-tw(`year mean ${r1(mean)}`,FB,6.8)-18,top-8.5,ax+aw-tw(`year mean ${r1(mean)}`,FB,6.8)-4,top-8.5,QC.orange,0.9,[3,2]);L(ax,bot,ax+aw,bot,QC.light,0.7);
+    } else {
+      grouped(M,t0,bw,chH,D.mods,[{name:D.cls,c:QC.brand2,vals:D.mods.map(m=>mStat(D.sub,m))},{name:'Year group',c:QC.light,vals:D.mods.map(m=>{const g=D.yr.m[m];return g&&g.max?g.pct:null})}],`${D.cls} vs the year group, by SoL topic`,'Facility %');
+      // score distribution
+      const x=M+bw+24,t=t0;H2(`Score distribution for ${D.cls}`,x,t,{maxW:bw-6});const top=t+34,bot=top+chH-48,ax=x+26,aw=bw-30;
+      const bwid=total>60?10:total>30?5:4,nb=Math.ceil((total+1)/bwid),bins=Array(nb).fill(0);D.sc.forEach(s=>bins[Math.min(nb-1,Math.floor(s/bwid))]++);let f0=bins.findIndex(v=>v),f1=nb-1-[...bins].reverse().findIndex(v=>v);f0=Math.max(0,f0-1);f1=Math.min(nb-1,f1+1);
+      const bb=bins.slice(f0,f1+1),mx=Math.max(...bb,1);const step=mx<=5?1:Math.ceil(mx/5);for(let v=0;v<=mx;v+=step){const y=bot-(bot-top)*v/mx;L(ax,y,ax+aw,y,QC.track,0.5);T(String(v),ax-4,y+2.5,6.8,{c:QC.grey,align:'right'})}
+      T('Students',x+4,top+(bot-top)/2+14,6.8,{c:QC.grey,rot:90});const cw2=aw/bb.length;
+      bb.forEach((v,i)=>{const hh=(bot-top)*v/mx;R(ax+i*cw2+1,bot-hh,cw2-2,hh,QC.brand2);if(v)T(String(v),ax+i*cw2+cw2/2,bot-hh-2.5,7,{f:FB,align:'center'});if(bb.length<=10||i%2===0)T(`${(f0+i)*bwid}-${Math.min(total,(f0+i+1)*bwid-1)}`,ax+i*cw2+cw2/2,bot+10,6.2,{c:QC.grey,align:'center'})});
+      const mX=v=>ax+aw*((v/bwid)-f0)/bb.length;L(mX(mean),top,mX(mean),bot,QC.orange,1.1,[3,2]);L(x+10,t+16,x+24,t+16,QC.orange,1.1,[3,2]);let lx2=x+28+T(`${D.cls} mean ${r1(mean)}`,x+28,t+19,7.2,{f:FB,c:QC.orange})+14;
+      L(mX(yrMean),top,mX(yrMean),bot,QC.ink,1.1,[1,2]);L(lx2,t+16,lx2+14,t+16,QC.ink,1.1,[1,2]);T(`year group mean ${r1(yrMean)}`,lx2+18,t+19,7.2,{f:FB,c:QC.ink});L(ax,bot,ax+aw,bot,QC.light,0.7);
+    }
+    P(`Facility = marks gained ÷ marks available.${D.miss.length?` ${D.miss.length} student${D.miss.length===1?' has':'s have'} not recorded ${a.id} yet and ${D.miss.length===1?'is':'are'} not included.`:''} SoL topics: ${D.mods.map(m=>`${m} ${MOD[m]?.name||''}`).join(' · ')}`,M,t0+chH+20,6.8,W-2*M,{c:QC.grey,max:3});}
+  // ======================= PAGE 2: diagnostic detail =======================
+  newPage('Diagnostic detail: what was lost, and where',`The question-level patterns behind the weak ${D.unit}s · ${D.gname}`);
+  {const t0=92;H2(`Facility by question part (${D.ps.length} items)`,M,t0);
+    let lx=W-M-190;[['Under 50%',QC.bad],['50 to 69%',QC.warn],['70% and above',QC.good]].concat(D.yr?[['Year group',QC.ink]]:[]).forEach(([s,c])=>{if(s==='Year group'){L(lx,t0-3,lx+9,t0-3,c,1.4)}else R(lx,t0-7,8,8,c);lx+=12+T(s,lx+12,t0,7,{c:QC.grey})+8});
+    const top=t0+14,bot=top+170,ax=M+24,aw=W-2*M-26,n=D.ps.length,cw=aw/n,bw=Math.max(2,cw*0.72);
+    [0,20,40,60,80,100].forEach(v=>{const y=bot-(bot-top)*v/100;L(ax,y,ax+aw,y,v===50||v===70?QC.light:QC.track,v===50||v===70?0.7:0.5,v===50||v===70?[2,2]:undefined);T(String(v),ax-4,y+2.5,6.8,{c:QC.grey,align:'right'})});
+    T('Facility %',M+2,top+(bot-top)/2+16,6.8,{c:QC.grey,rot:90});
+    D.ps.forEach((s,i)=>{const x=ax+i*cw+(cw-bw)/2,v=s.pct??0,hh=(bot-top)*v/100;R(x,bot-hh,bw,hh,qcol(s.pct));if(cw>=11)T(String(s.pct??''),x+bw/2,bot-hh-2.5,Math.min(6.2,cw*0.5),{f:FB,align:'center'});
+      if(D.yr){const y=D.yr.ps[i];if(y&&y.pct!=null){const yy=bot-(bot-top)*y.pct/100;L(x-1,yy,x+bw+1,yy,QC.ink,1.3)}}
+      T('Q'+qlab(s.p),x+bw/2+2.4,bot+5,Math.min(6.4,cw*0.8),{c:QC.grey,rot:90*-1,align:'left'})});L(ax,bot,ax+aw,bot,QC.light,0.7);}
+  // weakest items cards
+  {const t0=318;H2('Where the marks actually went: the weakest question parts',M,t0);T('Ranked by facility. Reasons and confidence come from what students recorded against each question part.',M+8,t0+13,7.2,{f:FI,c:QC.grey});
+    const items=[...D.ps].filter(s=>s.max).sort((x,y)=>x.pct-y.pct||y.p.marks-x.p.marks).slice(0,6);const gap=10,cw=(W-2*M-2*gap)/3,ch=128;
+    items.forEach((s,i)=>{const x=M+(i%3)*(cw+gap),t=t0+24+Math.floor(i/3)*(ch+gap);RR(x,t,cw,ch,6,QC.card,{bc:QC.line,bw:0.6});R(x,t+6,3.5,ch-12,qcol(s.pct));
+      T('Q'+qlab(s.p),x+12,t+20,13,{f:FB,c:QC.brand});T(`${s.pct}%`,x+cw-10,t+20,13,{f:FB,c:qcol(s.pct),align:'right'});
+      const k=s.p.lessons[0]||s.p.module;T(`${kn(k)} · ${kc(k)}`,x+12,t+32,7,{f:FI,c:QC.grey,maxW:cw-58});T(`${s.p.marks} mk`,x+cw-10,t+32,7,{c:QC.grey,align:'right'});
+      const rs=reasonsForParts(a,D.sub,[s.p]);const cf=D.conf[s.p.id];let body=`${s.p.topic}${s.p.detail?': '+s.p.detail:''}.`;
+      const h1=P(body,x+12,t+46,7.3,cw-22,{max:4});let tt=t+46+h1+3;
+      if(rs.length){tt+=P(`Most common reason: ${STATIC.reasons[rs[0][0]]}`,x+12,tt,6.9,cw-22,{c:QC.brand2,max:3})+2}
+      if(cf&&cf.c)P(`${cf.c} of ${cf.n} felt confident but gained under 70%.`,x+12,tt,6.9,cw-22,{c:QC.orange,max:2});
+      if(D.yr){const y=D.yr.ps.find(z=>z.p.id===s.p.id);if(y&&y.pct!=null)T(`Year group ${y.pct}%`,x+cw-10,t+ch-8,6.8,{f:FB,c:QC.grey,align:'right'})}});}
+  // headline read + class diagnosis
+  {const t0=612,gap=14,bw=(W-2*M-gap)/2,bh=178;const totalLost=D.pr.reduce((t,o)=>t+o.lost,0)||1;const top3=[...D.pr].sort((x,y)=>y.lost-x.lost).slice(0,3);
+    const bigPart=[...D.ps].filter(s=>s.max).sort((x,y)=>(y.max-y.got)-(x.max-x.got))[0];const {t:rt}=reasonTotals(a,D.sub);const rtop=Object.entries(rt).sort((x,y)=>y[1]-x[1])[0];
+    const ocTot=Object.values(D.conf).reduce((t,c)=>t+c.c,0),ocN=Object.values(D.conf).reduce((t,c)=>t+c.n,0);
+    const box=(x,title,c,lines)=>{RR(x,t0,bw,bh,6,QC.card,{bc:QC.line,bw:0.6});R(x,t0,bw,22,c);T(title,x+12,t0+15,9,{f:FB,c:QC.white});let t=t0+36;lines.forEach(l=>{if(t>t0+bh-10)return;R(x+12,t-4.2,2.6,2.6,c);t+=P(l,x+20,t,7.5,bw-32,{max:4})+4})};
+    box(M,'HEADLINE READ',QC.brand,[
+      `Strongest: ${kn(best.k)} (${best.pct}%). Weakest: ${kn(worst.k)} (${worst.pct}%).`,
+      `The top three ${D.unit}s by marks lost (${top3.map(o=>kn(o.k)).join(', ')}) account for ${pct(top3.reduce((t,o)=>t+o.lost,0),totalLost)}% of all marks lost.`,
+      bigPart?`Biggest single loss: Q${qlab(bigPart.p)} (${bigPart.p.topic}), ${bigPart.p.marks} marks, ${bigPart.pct}% gained.`:'',
+      ocN?`${ocTot} of ${ocN} ratings (${pct(ocTot,ocN)}%) were confident but still under 70% of the marks.`:'',
+      rtop?`Most common exam-technique issue: ${STATIC.reasons[rtop[0]]} (${rtop[1]} marks).`:''].filter(Boolean));
+    let diag=[];
+    if(D.cls==='all'){diag=D.cl.map(c=>{const g=Object.values(groupStats(a,submitted(a.id,c.id),D.by)).filter(o=>o.max).sort((x,y)=>x.pct-y.pct);const s=submitted(a.id,c.id).map(id=>score(a,id));return `${c.id} (mean ${pct(avg(s),total)}%): weakest ${g.slice(0,2).map(o=>`${kn(o.k)} ${o.pct}%`).join(', ')}; strongest ${g.length?kn(g[g.length-1].k)+' '+g[g.length-1].pct+'%':'n/a'}.`});
+      const spread=D.pr.map(o=>{const v=D.cl.map(c=>{const g=groupStats(a,submitted(a.id,c.id),D.by)[o.k];return g&&g.max?g.pct:null}).filter(v=>v!=null);return {o,d:v.length>1?Math.max(...v)-Math.min(...v):0}}).sort((x,y)=>y.d-x.d)[0];
+      if(spread&&spread.d>=15)diag.push(`Biggest gap between classes: ${kn(spread.o.k)}, ${spread.d} points apart, so it is class-specific rather than year-wide.`);
+      const allWeak=D.pr.filter(o=>D.cl.every(c=>{const g=groupStats(a,submitted(a.id,c.id),D.by)[o.k];return g&&g.max&&g.pct<50}));if(allWeak.length)diag.push(`Under 50% in every class: ${allWeak.map(o=>kn(o.k)).join(', ')}. Treat as year-wide.`)}
+    else{const d=D.pr.map(o=>{const y=D.yr.g[o.k];return {o,d:y&&y.max?o.pct-y.pct:0}}).sort((x,y)=>x.d-y.d);const below=d.filter(x=>x.d<=-5).slice(0,3),above=[...d].reverse().filter(x=>x.d>=5).slice(0,3);
+      diag.push(`${D.cls} mean ${pct(mean,total)}% against a year group mean of ${pct(yrMean,total)}%.`);
+      if(below.length)diag.push(`Below the year group on: ${below.map(x=>`${kn(x.o.k)} (${x.d} pts)`).join(', ')}.`);
+      if(above.length)diag.push(`Above the year group on: ${above.map(x=>`${kn(x.o.k)} (+${x.d} pts)`).join(', ')}.`);
+      const many=[...D.pr].sort((x,y)=>y.below.length-x.below.length)[0];if(many&&many.below.length)diag.push(`Most students under 50%: ${kn(many.k)} (${many.below.length} of ${D.sub.length}).`);
+      if(D.miss.length)diag.push(`${D.miss.length} student${D.miss.length===1?'':'s'} still to record ${a.id}.`)}
+    box(M+bw+gap,D.cls==='all'?'CLASS DIAGNOSIS':`${D.cls} DIAGNOSIS`,QC.pink,diag);}
+  // ======================= PAGE 3: support plan =======================
+  newPage('Support plan',`Exam-based starters · Link Back homework · actions · built from ${a.id}`);
+  const weakest=[...D.pr].sort((x,y)=>x.pct-y.pct);const starters=weakest.filter(o=>o.pct<70).slice(0,5);const hw=[...D.pr].filter(o=>o.below.length).sort((x,y)=>y.below.length-x.below.length||x.pct-y.pct).slice(0,5);
+  const qs=o=>'Q'+o.parts.map(qlab).join(', Q');
+  let t=80;
+  {const rows=starters.map((o,i)=>[`Wk ${i+1}`,`${kn(o.k)} (${kc(o.k)})`,qs(o),`${o.pct}% in ${a.id}${D.yr&&D.yr.g[o.k]?.max?`, year ${D.yr.g[o.k].pct}%`:''}; ${o.below.length} of ${D.sub.length} under 50%`]);
+    if(starters.length)rows.push([`Wk ${starters.length+1}`,'Mixed mini-set on every weak item, then re-test','All above','Check each has moved to 70% or above']);
+    const cols=[{w:36,h:'WEEK'},{w:188,h:'STARTER FOCUS'},{w:92,h:'TARGETS'},{w:0,h:'WHY IT IS INCLUDED'}];cols[3].w=W-2*M-24-cols.slice(0,3).reduce((s,c)=>s+c.w,0);
+    const rowH=r=>Math.max(...r.map((c,i)=>wrap(c,i===1?FB:F,7.4,cols[i].w-8).length))*9.8+8;
+    const bq=starters.slice(0,4).map(o=>{const K=o.k.includes('-')?lessonKey(o.k):{code:o.k,n:null};return {o,b:bankFor(K.code,K.n,2,false,'_').items}}).filter(x=>x.b.length);
+    const bh=40+18+rows.reduce((s,r)=>s+rowH(r),0)+(bq.length?22+bq.length*20:0)+10;
+    RR(M,t,W-2*M,bh,6,QC.card,{bc:QC.line,bw:0.6});R(M,t,W-2*M,22,QC.brand);T(`A · EXAM-BASED STARTERS   (10 to 12 min · low stakes · marked live)`,M+12,t+15,8.6,{f:FB,c:QC.white});
+    P(`One targeted exam-style question per session, lowest ${D.unit} first, recycled until re-test facility is 70% or above. Each row says what the average was in ${a.id}, which is why it is included.`,M+12,t+33,7.2,W-2*M-24,{c:QC.grey,max:2});
+    let tt=t+56;let x=M+12;cols.forEach(c=>{T(c.h,x,tt,6.8,{f:FB,c:QC.brand});x+=c.w});tt+=6;L(M+12,tt,W-M-12,tt,QC.line,0.6);tt+=10;
+    if(!rows.length){T(`Every ${D.unit} is secure (70% or above). Use starters for mixed retrieval.`,M+12,tt,7.6);tt+=14}
+    rows.forEach((r,ri)=>{const h=rowH(r);if(ri%2===0)R(M+8,tt-8,W-2*M-16,h,'#F4ECF4');let x=M+12;r.forEach((c,i)=>{const col=i===0?QC.pink:i===2?QC.brand2:i===3?QC.grey:QC.ink;P(c,x,tt,7.4,cols[i].w-8,{f:i<=2?FB:F,c:col});x+=cols[i].w});tt+=h});
+    if(bq.length){tt+=6;T('Past-paper questions from the bank to use',M+12,tt,7.6,{f:FB,c:QC.brand});tt+=12;bq.forEach(({o,b})=>{P(`${kn(o.k)}: ${b.map(q=>`${bankSpec(q)} ${bankSrc(q).replace(/ · /g,' ')}${q.marks?` (${q.marks} mk)`:''}`).join('  |  ')}`,M+12,tt,7,W-2*M-24,{c:QC.ink,max:2});tt+=20})}
+    t+=bh+14}
+  {const gap=12,lw=(W-2*M-gap)*0.58,rw=W-2*M-gap-lw;const plan=[];for(let k=1;k<=6;k++){plan.push([String(k),k===1?'None yet (new content)':starters[k-2]?`${kn(starters[k-2].k)}`:'Mixed re-test',hw.length?kn(hw[(k-1)%hw.length].k):'-'])}
+    const acts=D.cls==='all'?D.cl.map((c,i)=>{const g=Object.values(groupStats(a,submitted(a.id,c.id),D.by)).filter(o=>o.max).sort((x,y)=>x.pct-y.pct);return {h:c.id,c:QK[i%QK.length],b:g.length?`Reteach ${kn(g[0].k)} (${g[0].pct}%)${g[1]?` and ${kn(g[1].k)} (${g[1].pct}%)`:''} in starters.`:'No results.'}}).concat([{h:'All',c:QC.brand,b:worst?`Year-wide retrieval on ${kn(worst.k)} (${worst.pct}%).`:''}])
+      :[...D.pr].filter(o=>o.below.length).sort((x,y)=>y.below.length-x.below.length).slice(0,4).map((o,i)=>({h:kn(o.k),c:QK[i%QK.length],b:`${o.below.length} of ${D.sub.length} under 50%. Targeted Link Back with 3 bank questions${withNames?' (names on the last page)':''}.`}));
+    const bh=250;RR(M,t,lw,bh,6,QC.card,{bc:QC.line,bw:0.6});R(M,t,lw,22,QC.brand2);T('B · LINK BACK HOMEWORK  (spaced and interleaved)',M+12,t+15,8.6,{f:FB,c:QC.white,maxW:lw-20});
+    let tt=t+34;tt+=P(`Each weekly homework has three blocks: this week's new content, a Link Back to a ${D.unit} from an earlier starter, and one sticky weakness from ${a.id} every week until it is secure.`,M+12,tt,7.2,lw-24,{c:QC.grey,max:3})+8;
+    const cx=[M+12,M+36,M+12+lw*0.48];['HW','LINK BACK','STICKY WEAKNESS'].forEach((h,i)=>T(h,cx[i],tt,6.8,{f:FB,c:QC.brand}));tt+=6;L(M+12,tt,M+lw-12,tt,QC.line,0.6);tt+=11;
+    plan.forEach(r=>{T(r[0],cx[0],tt,7.6,{f:FB,c:QC.pink});T(r[1],cx[1],tt,7.3,{maxW:cx[2]-cx[1]-8});T(r[2],cx[2],tt,7.3,{c:QC.brand2,maxW:M+lw-12-cx[2]});tt+=17});
+    const x2=M+lw+gap;RR(x2,t,rw,bh,6,QC.card,{bc:QC.line,bw:0.6});R(x2,t,rw,22,QC.pink);T(D.cls==='all'?'C · CLASS ACTIONS':'C · STUDENT GROUPS',x2+12,t+15,8.6,{f:FB,c:QC.white});
+    tt=t+38;acts.forEach(ac=>{if(tt>t+bh-20)return;const h=P(ac.b,x2+20,tt+11,7.2,rw-32,{c:QC.grey,max:3});R(x2+12,tt-8,3,h+14,ac.c);T(ac.h,x2+20,tt,8,{f:FB,c:QC.brand,maxW:rw-32});tt+=h+22});
+    t+=bh+14}
+  {const bh=Math.min(H-40-t,150);RR(M,t,W-2*M,bh,6,QC.card,{bc:QC.line,bw:0.6});R(M,t,W-2*M,22,QC.brand);T('D · SUCCESS CRITERIA',M+12,t+15,8.6,{f:FB,c:QC.white});
+    let tt=t+36;tt+=P(`Starters give frequent, low-stakes exam practice in lesson. Link Back homework brings the same ${D.unit}s back 1, 3 and 6 weeks later so they stick. Track these before the next assessment:`,M+12,tt,7.6,W-2*M-24,{max:3})+4;
+    [`Re-test each starter ${D.unit} after its cycle: target 70% or above (secure).`,starters[0]?`Move ${kn(starters[0].k)} from ${starters[0].pct}% to at least 70%.`:'',hw[0]?`Get the ${hw[0].below.length} students under 50% on ${kn(hw[0].k)} above 50%.`:'',D.miss.length?`Get the ${D.miss.length} missing result${D.miss.length===1?'':'s'} recorded so the picture is complete.`:''].filter(Boolean).forEach(l=>{R(M+16,tt-4.2,2.8,2.8,QC.pink);tt+=P(l,M+24,tt,7.6,W-2*M-40,{max:2})+3})}
+  // ======================= PAGE 4: names (optional) =======================
+  if(withNames){newPage('Student groups',`Names for targeted Link Back homework · ${D.gname} · keep this page internal`);let t2=86;
+    const nm=ids=>ids.map(id=>stu(id).name).sort((x,y)=>surname(x).localeCompare(surname(y))).join(', ');
+    [...D.pr].filter(o=>o.below.length).sort((x,y)=>y.below.length-x.below.length).forEach(o=>{if(t2>H-80)return;T(`${kn(o.k)} (${kc(o.k)}): ${o.pct}% average, ${o.below.length} under 50%`,M,t2,9,{f:FB,c:QC.brand,maxW:W-2*M});t2+=13;t2+=P(nm(o.below),M,t2,8,W-2*M,{max:4})+10});
+    if(D.miss.length&&t2<H-80){T(`Not recorded ${a.id} yet (${D.miss.length})`,M,t2,9,{f:FB,c:QC.orange});t2+=13;P(nm(D.miss),M,t2,8,W-2*M,{max:6})}}
+  // footers
+  pages.forEach((p,i)=>{pg=p;L(M,H-30,W-M,H-30,QC.line,0.6);T('Aston University Mathematics School',M,H-18,7.5,{f:FB,c:QC.brand});T(`${a.id} · ${D.gname} · made ${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})} · AUMS Assessment Tracker`,W/2,H-18,6.8,{c:QC.grey,align:'center'});T(`Page ${i+1} of ${pages.length}`,W-M,H-18,7.5,{c:QC.grey,align:'right'})});
+  return await doc.save()}
+async function downloadQlaPdf(aid,cls,withNames){const a=asm(aid);if(!a)return;
+  const list=cls==='each'?classes().filter(c=>a.classes.includes(c.id)&&submitted(a.id,c.id).length).map(c=>c.id):[cls];
+  if(!list.length){toast('No class has results for this yet');return}
+  toast(list.length>1?`Making ${list.length} PDF reports…`:'Making the PDF report…');
+  try{for(const c of list){const bytes=await makeQlaPdf(aid,c,withNames);if(!bytes){toast(`No results for ${c==='all'?'the year group':c} yet`);continue}
+    const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));const x=document.createElement('a');x.href=url;x.download=`AUMS ${a.id} QLA report - ${c==='all'?'Year group':c}.pdf`;document.body.appendChild(x);x.click();x.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);await new Promise(r=>setTimeout(r,400))}
+    toast(list.length>1?`${list.length} PDF reports downloaded`:'PDF report downloaded')}catch(e){console.error(e);toast("Couldn't make the PDF. Try again.")}}
+function downloadReport(aid,cls,withNames,fmt){if(fmt==='md')downloadPlan(aid,cls,withNames);else downloadQlaPdf(aid,cls,withNames)}
 
 // ================= data loading =================
 async function fetchAll(make){let out=[],from=0;const size=1000;for(;;){const {data,error}=await make().range(from,from+size-1);if(error)throw error;out=out.concat(data||[]);if(!data||data.length<size)break;from+=size}return out}
@@ -911,7 +1095,8 @@ document.addEventListener('click',async e=>{
   else if(act==='tstudent'){S.tStudent=t.dataset.sid;top0()}
   else if(act==='tback'){S.tStudent=null}
   else if(act==='tomiss'){document.getElementById('missing')?.scrollIntoView({behavior:'smooth',block:'center'});return}
-  else if(act==='repdl'){downloadPlan(S.aid,S.cls,false);return}
+  else if(act==='repdl'){downloadReport(S.aid,S.cls,false,t.dataset.fmt);return}
+  else if(act==='dlfmt'){S.dlCls=document.getElementById('dl-cls')?.value||S.dlCls;S.dlNames=!!document.getElementById('dl-names')?.checked;S.dlFmt=t.dataset.v;const y=window.scrollY;save();render();window.scrollTo(0,y);return}
   else if(act==='stview'){S.stView=t.dataset.v}
   else if(act==='stshow'){S.stShow=t.dataset.v}
   else if(act==='stsort'){const v=t.dataset.v;if(v.startsWith('k:')){S.stDir=S.stSort===v?-(S.stDir||1):1}S.stSort=v;const y=window.scrollY;save();render();window.scrollTo(0,y);return}
@@ -966,7 +1151,7 @@ document.addEventListener('input',e=>{const t=e.target;if(!DRAFT)return;
 });
 function busy(on){S.busy=on}
 document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target;const v=id=>(document.getElementById(id)?.value||'').trim();
-  if(f.id==='plandl'){S.dlCls=v('dl-cls');S.dlNames=!!document.getElementById('dl-names')?.checked;downloadPlan(S.aid,S.dlCls,S.dlNames);return}
+  if(f.id==='plandl'){S.dlCls=v('dl-cls');S.dlNames=!!document.getElementById('dl-names')?.checked;downloadReport(S.aid,S.dlCls,S.dlNames,S.dlFmt||'pdf');return}
   if(f.id==='signup'){const name=v('su-name'),email=v('su-email').toLowerCase(),pw=document.getElementById('su-pw').value,cls=v('su-cls');
     if(name.split(/\s+/).length<2)return setErr('su-err','Enter your first name and surname.');
     if(!/^[^@\s]+@aums\.ac\.uk$/.test(email))return setErr('su-err','Use your school email ending @aums.ac.uk.');
