@@ -9,7 +9,7 @@ const MOD={};STATIC.modules.forEach(m=>MOD[m.code]=m);
 const KEY='aums-tracker-ui-v1';
 let S={stab:'home',ttab:'report',aid:null,cls:'all',sAid:null,recAid:null,tStudent:null,bankMod:'C&M 00',bankLes:'all',editing:null,authTab:'signup',view:location.hash==='#staff'?'staff':'student',busy:false,recovery:false};
 try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved)Object.assign(S,saved,{editing:null,tStudent:null,busy:false,recovery:false,view:location.hash==='#staff'?'staff':'student'});}catch(e){}
-function save(){try{localStorage.setItem(KEY,JSON.stringify({stab:S.stab,ttab:S.ttab,aid:S.aid,cls:S.cls,sAid:S.sAid,bankMod:S.bankMod,authTab:S.authTab,stView:S.stView,stSort:S.stSort,stShow:S.stShow,stDir:S.stDir,dlFmt:S.dlFmt}))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify({stab:S.stab,ttab:S.ttab,aid:S.aid,cls:S.cls,sAid:S.sAid,bankMod:S.bankMod,authTab:S.authTab,stView:S.stView,stSort:S.stSort,stShow:S.stShow,stDir:S.stDir,dlFmt:S.dlFmt,unit:S.unit}))}catch(e){}}
 // DB cache
 let ROLE=null,ME=null,LOADED=false;
 let DB={classes:[],students:[],assessments:[],resp:{},agg:{},done:new Set(),doneAll:{},settings:{}};
@@ -24,6 +24,9 @@ const ST_LABEL={good:'Secure',warn:'Developing',bad:'Priority',plain:'No data'};
 const SICON={good:'<svg viewBox="0 0 10 10"><path d="M1.5 5.2 4 7.6 8.6 2.4" fill="none" stroke="currentColor" stroke-width="1.9"/></svg>',warn:'<svg viewBox="0 0 10 10"><rect x="1" y="4" width="8" height="2.2" rx="1" fill="currentColor"/></svg>',bad:'<svg viewBox="0 0 10 10"><path d="M5 1 9.4 8.8H.6Z" fill="currentColor"/></svg>',plain:''};
 const chip=(p,txt)=>`<span class="chip ${st(p)}">${SICON[st(p)]}${txt??ST_LABEL[st(p)]}</span>`;
 const pc=p=>p==null?'–':p+'%';
+const MK=()=>S.unit==='marks';
+// value in the chosen unit: percentage, or marks (average per student for a group, exact for one student)
+function fv(p,o){if(p==null)return '–';if(MK()&&o){const g=o.ag!=null?o.ag:o.got,m=o.am!=null?o.am:o.max;if(m)return `${r1(g)}/${r1(m)}`}return p+'%'}
 function classes(){return DB.classes}
 function students(){return DB.students}
 function stu(id){return DB.students.find(s=>s.id===id)}
@@ -53,11 +56,11 @@ function classCount(a,cls){if(ROLE==='teacher')return submitted(a.id,cls).length
 function isDone(sid,qid){return sid===ME?.id?DB.done.has(qid):!!(DB.doneAll[sid]&&DB.doneAll[sid].has(qid))}
 
 // stats
-function partStats(a,sids){const r=respMap(a.id);return a.parts.map(p=>{let g=0,n=0;sids.forEach(id=>{const x=r[id]?.ans?.[p.id];if(x){g+=x.s;n++}});return {p,got:g,max:n*p.marks,n,pct:pct(g,n*p.marks)}})}
-function groupStats(a,sids,by){const out={};const r=respMap(a.id);
-  a.parts.forEach(p=>{const k=by==='lesson'?(p.lessons[0]||null):p.module;if(!k)return;out[k]=out[k]||{k,got:0,max:0,parts:[]};out[k].parts.push(p);
-    sids.forEach(id=>{const x=r[id]?.ans?.[p.id];if(x){out[k].got+=x.s;out[k].max+=p.marks}})});
-  Object.values(out).forEach(o=>o.pct=pct(o.got,o.max));return out}
+function partStats(a,sids){const r=respMap(a.id);return a.parts.map(p=>{let g=0,n=0;sids.forEach(id=>{const x=r[id]?.ans?.[p.id];if(x){g+=x.s;n++}});return {p,got:g,max:n*p.marks,n,pct:pct(g,n*p.marks),ag:n?g/n:0,am:p.marks}})}
+function groupStats(a,sids,by){const out={};const r=respMap(a.id);const who={};
+  a.parts.forEach(p=>{const k=by==='lesson'?(p.lessons[0]||null):p.module;if(!k)return;out[k]=out[k]||{k,got:0,max:0,parts:[]};out[k].parts.push(p);who[k]=who[k]||new Set();
+    sids.forEach(id=>{const x=r[id]?.ans?.[p.id];if(x){out[k].got+=x.s;out[k].max+=p.marks;who[k].add(id)}})});
+  Object.values(out).forEach(o=>{o.pct=pct(o.got,o.max);o.n=who[o.k].size;o.ag=o.n?o.got/o.n:0;o.am=o.n?o.max/o.n:0});return out}
 function score(a,sid){const x=respMap(a.id)[sid];if(!x)return null;return a.parts.reduce((t,p)=>t+(x.ans[p.id]?.s||0),0)}
 function sortLessons(keys){return keys.sort((a,b)=>{const A=lessonKey(a),B=lessonKey(b);return A.code.localeCompare(B.code)||A.n-B.n})}
 function hasLessons(a){return a.parts.some(p=>p.lessons.length)}
@@ -164,8 +167,8 @@ function cmbToggles(pool){const on=S.cmbSel;S.cmbPool=pool.map(a=>a.id);
 // add up got/max for each topic (and lesson) over the chosen assessments
 function cmbStats(as,statFn){const T={};
   as.forEach(a=>{const gm=statFn(a,'module'),gl=statFn(a,'lesson');
-    Object.values(gm).forEach(o=>{const t=T[o.k]=T[o.k]||{k:o.k,got:0,max:0,in:[],les:{}};if(o.max){t.got+=o.got;t.max+=o.max;t.in.push(a.id)}});
-    Object.values(gl).forEach(o=>{const code=o.k.split('-')[0];const t=T[code]=T[code]||{k:code,got:0,max:0,in:[],les:{}};const l=t.les[o.k]=t.les[o.k]||{k:o.k,got:0,max:0,in:[]};if(o.max){l.got+=o.got;l.max+=o.max;l.in.push(a.id)}})});
+    Object.values(gm).forEach(o=>{const t=T[o.k]=T[o.k]||{k:o.k,got:0,max:0,ag:0,am:0,in:[],les:{}};if(o.max){t.got+=o.got;t.max+=o.max;t.ag+=o.ag||0;t.am+=o.am||0;t.in.push(a.id)}});
+    Object.values(gl).forEach(o=>{const code=o.k.split('-')[0];const t=T[code]=T[code]||{k:code,got:0,max:0,ag:0,am:0,in:[],les:{}};const l=t.les[o.k]=t.les[o.k]||{k:o.k,got:0,max:0,ag:0,am:0,in:[]};if(o.max){l.got+=o.got;l.max+=o.max;l.ag+=o.ag||0;l.am+=o.am||0;l.in.push(a.id)}})});
   Object.values(T).forEach(t=>{t.pct=pct(t.got,t.max);Object.values(t.les).forEach(l=>l.pct=pct(l.got,l.max))});return T}
 const modOrder=c=>{const i=STATIC.modules.findIndex(m=>m.code===c);return i<0?999:i};
 // cols: [{name, stat:(a,by)=>groupStats-like}] first col is the main one
@@ -176,14 +179,14 @@ function combinedCard({pool,cols,sid,isT,title,hint}){
   let keys=Object.keys(main).filter(k=>main[k].max);
   const sort=S.cmbSort||'sol';
   keys.sort(sort==='weak'?(x,y)=>main[x].pct-main[y].pct:(x,y)=>modOrder(x)-modOrder(y));
-  const tot=keys.reduce((o,k)=>{o.g+=main[k].got;o.m+=main[k].max;return o},{g:0,m:0});
+  const tot=keys.reduce((o,k)=>{o.g+=main[k].got;o.m+=main[k].max;o.ag+=main[k].ag;o.am+=main[k].am;return o},{g:0,m:0,ag:0,am:0});
   S.topicSel=S.topicSel||new Set();S.cmbOpen=S.cmbOpen||new Set();
   const tick=(k,lab)=>`<input type="checkbox" data-act="tsel" data-k="${esc(k)}" ${S.topicSel.has(k)?'checked':''} aria-label="Pick ${esc(lab)} for export">`;
   const rowsHtml=keys.map(k=>{const t=main[k];const m=MOD[k];const open=S.cmbOpen.has(k);const lk=sortLessons(Object.keys(t.les).filter(x=>t.les[x].max));
     let r=`<tr class="${S.topicSel.has(k)?'picked':''}"><td class="ck">${tick(k,m?.name||k)}</td><td>${lk.length?`<button type="button" class="exp" data-act="cmbopen" data-k="${esc(k)}" aria-expanded="${open}" aria-label="Show lessons">${open?'▾':'▸'}</button>`:'<span class="exp0"></span>'}<span class="strong">${esc(m?.name||k)}</span>${m?.fm?'<span class="fm">FM</span>':''} <span class="xs muted">${esc(k)}</span></td>
-      ${data.map(d=>cellTd(d[k]&&d[k].max?d[k].pct:null)).join('')}
+      ${data.map(d=>cellTd(d[k]&&d[k].max?d[k].pct:null,'',d[k])).join('')}
       <td class="r small">${t.got}/${t.max}</td><td class="small">${t.in.map(x=>`<span class="chip plain">${esc(x)}</span>`).join(' ')}</td></tr>`;
-    if(open)r+=lk.map(l=>{const o=t.les[l];const L=lessonKey(l);return `<tr class="sub ${S.topicSel.has(l)?'picked':''}"><td class="ck">${tick(l,L.name)}</td><td style="padding-left:34px" class="small">L${L.n} ${esc(L.name)}</td>${data.map(d=>{const x=d[k]?.les?.[l];return cellTd(x&&x.max?x.pct:null)}).join('')}<td class="r xs muted">${o.got}/${o.max}</td><td class="xs muted">${o.in.join(', ')}</td></tr>`}).join('');
+    if(open)r+=lk.map(l=>{const o=t.les[l];const L=lessonKey(l);return `<tr class="sub ${S.topicSel.has(l)?'picked':''}"><td class="ck">${tick(l,L.name)}</td><td style="padding-left:34px" class="small">L${L.n} ${esc(L.name)}</td>${data.map(d=>{const x=d[k]?.les?.[l];return cellTd(x&&x.max?x.pct:null,'',x)}).join('')}<td class="r xs muted">${o.got}/${o.max}</td><td class="xs muted">${o.in.join(', ')}</td></tr>`}).join('');
     return r}).join('');
   // export bar
   const per=+(S.cmbPer||3);
@@ -198,7 +201,7 @@ function combinedCard({pool,cols,sid,isT,title,hint}){
     <div class="filters"><label class="fl"><span>Order</span><select id="cmb-sort"><option value="sol" ${sort==='sol'?'selected':''}>Scheme of learning</option><option value="weak" ${sort==='weak'?'selected':''}>Weakest first</option></select></label></div></div>
     <div class="card-b"><div class="xs strong muted up" style="margin-bottom:6px">Assessments to include</div>${cmbToggles(pool)}
     ${!as.length?'<div class="empty" style="margin-top:14px">Switch on at least one assessment.</div>':`
-    <div class="band" style="margin:14px 0"><div class="metric"><span class="lab">Combined</span><span class="val" style="color:var(--${st(pct(tot.g,tot.m))})">${pct(tot.g,tot.m)}%</span><span class="sub">${tot.g} of ${tot.m} marks</span></div><div class="metric"><span class="lab">Topics</span><span class="val">${keys.length}</span><span class="sub">in these papers</span></div><div class="metric"><span class="lab">Under 70%</span><span class="val">${weak.length}</span><span class="sub">topics</span></div></div>
+    <div class="band" style="margin:14px 0"><div class="metric"><span class="lab">Combined</span><span class="val" style="color:var(--${st(pct(tot.g,tot.m))})">${MK()?`${r1(tot.ag)}<small> / ${r1(tot.am)}</small>`:pct(tot.g,tot.m)+'%'}</span><span class="sub">${MK()?pct(tot.g,tot.m)+'% · ':''}${tot.ag===tot.g?`${tot.g} of ${tot.m} marks`:'average per student'}</span></div><div class="metric"><span class="lab">Topics</span><span class="val">${keys.length}</span><span class="sub">in these papers</span></div><div class="metric"><span class="lab">Under 70%</span><span class="val">${weak.length}</span><span class="sub">topics</span></div></div>
     ${bar}
     <div class="tw"><table class="tbl cmbt"><thead><tr><th class="ck"><span class="sr">Pick</span></th><th>SoL topic</th>${cols.map(c=>`<th class="c">${esc(c.name)}</th>`).join('')}<th class="r">Marks</th><th>Assessed in</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
     <p class="xs muted" style="margin-top:10px">Tick topics or lessons (open a topic with ▸ to see its lessons), then make one PDF of past-paper questions for all of them.${isT?'':' Questions you have already ticked as done are left out.'}</p>`}</div></div>`;
@@ -258,12 +261,12 @@ function paperStrip(a,x){
 const scaleRow=`<div class="scale"><span style="left:0;transform:none">0%</span><span style="left:50%">50%</span><span style="left:70%">70%</span><span style="left:100%;transform:translateX(-100%)">100%</span></div>`;
 // Bullet rows: value bar on status zones, optional comparison tick
 function bulletRows(items,{marker='Class average'}={}){
-  return `<div class="brs">${items.map(it=>`<div class="br" data-tip="${tip(it.name,`${it.detail||''}${it.m!=null?` · ${marker} ${it.m}%`:''}`)}"><div class="top"><div class="nm">${it.name}${it.sub?`<small>${it.sub}</small>`:''}</div><div class="v" style="color:var(--${st(it.v)})">${pc(it.v)}</div></div><div class="trk"><div class="b ${st(it.v)}" style="width:${Math.max(it.v,1)}%"></div>${it.m!=null?`<div class="m" style="left:${it.m}%"></div>`:''}</div></div>`).join('')}</div>${scaleRow}`;
+  return `<div class="brs">${items.map(it=>`<div class="br" data-tip="${tip(it.name,`${it.detail||''}${it.m!=null?` · ${marker} ${it.m}%`:''}`)}"><div class="top"><div class="nm">${it.name}${it.sub?`<small>${it.sub}</small>`:''}</div><div class="v" style="color:var(--${st(it.v)})">${fv(it.v,it.o)}</div></div><div class="trk"><div class="b ${st(it.v)}" style="width:${Math.max(it.v,1)}%"></div>${it.m!=null?`<div class="m" style="left:${it.m}%"></div>`:''}</div></div>`).join('')}</div>${scaleRow}`;
 }
 // Dot rows: cohort bar plus one dot per class
 const KCOL=['var(--k1)','var(--k2)','var(--k3)'];
 function dotRows(items,cls){
-  return `<div class="brs">${items.map(it=>`<div class="br"><div class="top"><div class="nm">${it.name}${it.sub?`<small>${it.sub}</small>`:''}</div><div class="v" style="color:var(--${st(it.v)})" data-tip="${tip(it.name,'All classes '+pc(it.v))}">${pc(it.v)}</div></div><div class="trk"><div class="b soft" style="width:${Math.max(it.v,1)}%"></div>${it.dots.map((d,i)=>d.v==null?'':`<div class="d" style="left:${d.v}%;background:${KCOL[i%3]}" data-tip="${tip(d.cls,pc(d.v)+' · '+it.plain)}"></div>`).join('')}</div></div>`).join('')}</div>${scaleRow}`;
+  return `<div class="brs">${items.map(it=>`<div class="br"><div class="top"><div class="nm">${it.name}${it.sub?`<small>${it.sub}</small>`:''}</div><div class="v" style="color:var(--${st(it.v)})" data-tip="${tip(it.name,'All classes '+fv(it.v,it.o))}">${fv(it.v,it.o)}</div></div><div class="trk"><div class="b soft" style="width:${Math.max(it.v,1)}%"></div>${it.dots.map((d,i)=>d.v==null?'':`<div class="d" style="left:${d.v}%;background:${KCOL[i%3]}" data-tip="${tip(d.cls,fv(d.v,d.o)+' · '+it.plain)}"></div>`).join('')}</div></div>`).join('')}</div>${scaleRow}`;
 }
 // Confidence quadrant
 function quadrant(q,{teacher=false}={}){
@@ -308,10 +311,10 @@ function columns(ps,overall){
   let x=m.l;
   ps.forEach(s=>{const w=s.p.marks*u,y=Y(s.pct||0),col=`var(--bar-${st(s.pct)})`;const r=Math.min(5,w/2);
     g+=`<path d="M${x},${Y(0)} V${y+r} q0,-${r} ${r},-${r} H${x+w-r} q${r},0 ${r},${r} V${Y(0)} Z" fill="${col}"/>`;
-    if(w>=15)g+=`<text x="${x+w/2}" y="${y-6}" font-size="11" font-weight="700" text-anchor="middle" fill="var(--ink-2)">${s.pct}</text>`;
+    if(w>=15)g+=`<text x="${x+w/2}" y="${y-6}" font-size="11" font-weight="700" text-anchor="middle" fill="var(--ink-2)">${MK()?r1(s.ag):s.pct}</text>`;
     g+=`<text x="${x+w/2}" y="${Y(0)+16}" font-size="11" font-weight="700" text-anchor="middle" fill="var(--ink-2)">${s.p.q}${s.p.p}</text><text x="${x+w/2}" y="${Y(0)+30}" font-size="9.5" text-anchor="middle" fill="var(--muted)">${s.p.marks}</text>`;
-    g+=`<rect x="${x}" y="${m.t}" width="${w}" height="${ph}" fill="transparent" data-tip="${tip(`Q${qlab(s.p)} · ${s.p.topic}`,`${s.p.detail} · ${s.pct}% facility · ${s.got}/${s.max} marks`)}"/>`;x+=w+gap});
-  if(overall!=null){g+=`<line x1="${m.l}" x2="${m.l+pw+6}" y1="${Y(overall)}" y2="${Y(overall)}" stroke="var(--brand)" stroke-width="2" stroke-dasharray="6 4"/><text x="${m.l+pw+9}" y="${Y(overall)-2}" font-size="11" font-weight="700" fill="var(--brand)">Paper</text><text x="${m.l+pw+9}" y="${Y(overall)+11}" font-size="12" font-weight="800" fill="var(--brand)">${overall}%</text>`}
+    g+=`<rect x="${x}" y="${m.t}" width="${w}" height="${ph}" fill="transparent" data-tip="${tip(`Q${qlab(s.p)} · ${s.p.topic}`,`${s.p.detail} · ${s.pct}% facility · average ${r1(s.ag)} of ${s.p.marks} marks`)}"/>`;x+=w+gap});
+  if(overall!=null){g+=`<line x1="${m.l}" x2="${m.l+pw+6}" y1="${Y(overall)}" y2="${Y(overall)}" stroke="var(--brand)" stroke-width="2" stroke-dasharray="6 4"/><text x="${m.l+pw+9}" y="${Y(overall)-2}" font-size="11" font-weight="700" fill="var(--brand)">Paper</text><text x="${m.l+pw+9}" y="${Y(overall)+11}" font-size="12" font-weight="800" fill="var(--brand)">${MK()?r1(ps.reduce((t,s)=>t+s.ag,0))+'/'+ps.reduce((t,s)=>t+s.am,0):overall+'%'}</text>`}
   g+=`<text x="${m.l-8}" y="${Y(0)+30}" font-size="9.5" text-anchor="end" fill="var(--muted)">marks</text>`;
   return g+'</svg>';
 }
@@ -333,7 +336,7 @@ function smallMult(series,labels){
   return g+'</svg>';
 }
 function statusLegend(){return `<div class="legend"><span><i class="sw" style="background:var(--bar-good)"></i>Secure, 70% and above</span><span><i class="sw" style="background:var(--bar-warn)"></i>Developing, 50 to 69%</span><span><i class="sw" style="background:var(--bar-bad)"></i>Priority, below 50%</span></div>`}
-function cellTd(p,extra=''){if(p==null)return `<td class="cell t-none"><span>·</span></td>`;return `<td class="cell t-${st(p)}" ${extra}><span>${p}%</span></td>`}
+function cellTd(p,extra='',o){if(p==null)return `<td class="cell t-none"><span>·</span></td>`;return `<td class="cell t-${st(p)}${MK()&&o?' mk':''}" ${extra}><span>${fv(p,o)}</span></td>`}
 function hbars(items){const mx=Math.max(1,...items.map(i=>i.v));return `<div class="brs">${items.map(it=>`<div class="br" data-tip="${tip(it.name,it.detail||'')}"><div class="top"><div class="nm" style="font-weight:500">${esc(it.name)}</div><div class="v">${it.vt??it.v}</div></div><div class="trk plain" style="background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line)"><div class="b" style="width:${Math.max(1,100*it.v/mx)}%;background:var(--brand-2)"></div></div></div>`).join('')}</div>`}
 
 // ================= student views =================
@@ -378,15 +381,15 @@ function sHome(me){
   const w=weakLessons(last,me.id);const cg=classGroup(last,me.cls,hasLessons(last)?'lesson':'module');
   {const comb=cmbStats(mine,(a,by)=>groupStats(a,[me.id],by));const ks=Object.keys(comb).filter(k=>comb[k].max);const tg=ks.reduce((t,k)=>t+comb[k].got,0),tm=ks.reduce((t,k)=>t+comb[k].max,0);
    const secure=ks.filter(k=>comb[k].pct>=70).length;const diff=cav!=null?Math.round(10*(sc-cav))/10:null;const pp=pct(sc,last.total);
-   h+=`<div class="band"><div class="metric"><span class="lab">${esc(last.id)} score</span><span class="val">${pp}%</span><span class="sub">${sc} of ${last.total} marks</span><div class="meter"><i style="width:${pp}%"></i></div></div>
+   h+=`<div class="band"><div class="metric"><span class="lab">${esc(last.id)} score</span><span class="val">${MK()?`${sc}<small> / ${last.total}</small>`:pp+'%'}</span><span class="sub">${MK()?pp+'% of the marks':`${sc} of ${last.total} marks`}</span><div class="meter"><i style="width:${pp}%"></i></div></div>
    <div class="metric"><span class="lab">Against ${esc(me.cls)}</span><span class="val" style="color:var(--${diff==null?'ink':diff>=0?'good':'bad'})!important">${diff==null?'–':(diff>0?'+':'')+diff}</span><span class="sub">marks ${diff==null?'':diff>=0?'above':'below'} the class average</span></div>
-   <div class="metric"><span class="lab">All assessments</span><span class="val">${pct(tg,tm)}%</span><span class="sub">${mine.length} recorded · ${tg} of ${tm} marks</span></div>
+   <div class="metric"><span class="lab">All assessments</span><span class="val">${MK()?`${tg}<small> / ${tm}</small>`:pct(tg,tm)+'%'}</span><span class="sub">${mine.length} recorded · ${MK()?pct(tg,tm)+'%':`${tg} of ${tm} marks`}</span></div>
    <div class="metric"><span class="lab">Secure topics</span><span class="val">${secure}<small> / ${ks.length}</small></span><span class="sub">at 70% or more overall</span></div>
    <div class="metric"><span class="lab">Practice done</span><span class="val">${me.id===ME?.id?DB.done.size:(DB.doneAll[me.id]?.size||0)}</span><span class="sub">past-paper questions ticked off</span></div></div>`;}
   h+=`<div class="grid c-5-7"><div class="card"><div class="card-h"><div><h2>${esc(last.name.split(':')[0])} result</h2><p class="hint">${esc(last.name.split(':')[1]||'')}</p></div><button class="btn sec sm" data-act="results" data-aid="${last.id}">Full report</button></div><div class="card-b">${ringBlock(sc,last.total,sc+alloc,cav,me.cls)}</div></div>
-  <div class="card"><div class="card-h"><div><h2>Work on these first</h2><p class="hint">Your three lowest lessons. The black line is the ${me.cls} average.</p></div><button class="btn sec sm" data-act="stab" data-k="practice">Practice questions</button></div><div class="card-b">${bulletRows(w.slice(0,3).map(o=>({name:esc(keyName(o.k)),sub:esc(o.k.includes('-')?`${lessonKey(o.k).code} ${MOD[lessonKey(o.k).code].name} · lesson ${lessonKey(o.k).n}`:o.k),v:o.pct,m:cg[o.k]?.pct,detail:`${o.got} of ${o.max} marks`})))}</div></div></div>`;
+  <div class="card"><div class="card-h"><div><h2>Work on these first</h2><p class="hint">Your three lowest lessons. The black line is the ${me.cls} average.</p></div><button class="btn sec sm" data-act="stab" data-k="practice">Practice questions</button></div><div class="card-b">${bulletRows(w.slice(0,3).map(o=>({name:esc(keyName(o.k)),sub:esc(o.k.includes('-')?`${lessonKey(o.k).code} ${MOD[lessonKey(o.k).code].name} · lesson ${lessonKey(o.k).n}`:o.k),v:o.pct,o,m:cg[o.k]?.pct,detail:`${o.got} of ${o.max} marks`})))}</div></div></div>`;
   {const comb=cmbStats(mine,(a,by)=>groupStats(a,[me.id],by)),cc=cmbStats(mine,(a,by)=>classGroup(a,me.cls,by));const ks=Object.keys(comb).filter(k=>comb[k].max).sort((x,y)=>modOrder(x)-modOrder(y));
-   if(ks.length)h+=`<div class="card mt"><div class="card-h"><div><h2>Your topics so far</h2><p class="hint">Every mark on each SoL topic across all ${mine.length} of your assessments. The black line is the ${esc(me.cls)} average.</p></div><button class="btn sec sm" data-act="stab" data-k="progress">See progress</button></div><div class="card-b">${bulletRows(ks.map(k=>({name:esc(MOD[k]?.name||k),sub:esc(k)+' · '+comb[k].in.join(', '),v:comb[k].pct,m:cc[k]?.max?cc[k].pct:null,detail:`${comb[k].got} of ${comb[k].max} marks`})))}</div></div>`;}
+   if(ks.length)h+=`<div class="card mt"><div class="card-h"><div><h2>Your topics so far</h2><p class="hint">Every mark on each SoL topic across all ${mine.length} of your assessments. The black line is the ${esc(me.cls)} average.</p></div><button class="btn sec sm" data-act="stab" data-k="progress">See progress</button></div><div class="card-b">${bulletRows(ks.map(k=>({name:esc(MOD[k]?.name||k),sub:esc(k)+' · '+comb[k].in.join(', '),v:comb[k].pct,o:comb[k],m:cc[k]?.max?cc[k].pct:null,detail:`${comb[k].got} of ${comb[k].max} marks`})))}</div></div>`;}
   return h;
 }
 function a_alloc(a,x){return Math.min(a.total-a.parts.reduce((t,p)=>t+(x.ans[p.id]?.s||0),0),a.parts.reduce((t,p)=>t+Object.values(x.ans[p.id]?.r||{}).reduce((u,v)=>u+v,0),0))}
@@ -443,7 +446,7 @@ async function submitDraft(){
 function focusBlock(o,sid,interactive,n=4){
   const L=o.k.includes('-')?lessonKey(o.k):null;const code=L?L.code:o.k;const m=MOD[code];const recs=bankFor(code,L?L.n:null,n,true,sid);
   const tb=[...new Set(o.parts.map(p=>p.textbook).filter(Boolean))];
-  return `<div class="focus"><div class="fh"><div><h3>${esc(keyName(o.k))}</h3><div class="mod">${esc(modLabel(code))}${L?` · lesson ${L.n} of ${m.lessons.length}`:''}</div></div>${chip(o.pct,o.pct+'%')}</div>
+  return `<div class="focus"><div class="fh"><div><h3>${esc(keyName(o.k))}</h3><div class="mod">${esc(modLabel(code))}${L?` · lesson ${L.n} of ${m.lessons.length}`:''}</div></div>${chip(o.pct,fv(o.pct,o))}</div>
   <div class="fb"><div class="where"><div class="wl">
    <div>${IC.pages}<span><b>Where you lost marks</b>${o.parts.map(p=>`Q${qlab(p)} ${esc(p.detail)}`).join('<br>')}</span></div>
    ${tb.length?`<div>${IC.book}<span><b>Textbook</b>${tb.map(esc).join('<br>')}</span></div>`:''}
@@ -462,7 +465,7 @@ function sResults(me,aid,readOnly=false){
   <div class="card"><div class="card-h"><div><h2>Your paper at a glance</h2><p class="hint">Each square is one mark. The letter under each question is how confident you felt.</p></div></div><div class="card-b">${paperStrip(a,x)}</div></div></div>`;
   // lessons
   const rows=Object.values(studentGroup(a,me.id,byL?'lesson':'module'));const byMod={};rows.forEach(o=>{const c=o.k.includes('-')?lessonKey(o.k).code:o.k;(byMod[c]=byMod[c]||[]).push(o)});
-  h+=`<div class="grid c-7-5 mt"><div class="card"><div class="card-h"><div><h2>${byL?'Lesson by lesson':'Topic by topic'}</h2><p class="hint">Mapped to the Year 12 scheme of learning. The bar is you, the black line is the ${me.cls} average.</p></div></div><div class="card-b">${Object.keys(byMod).sort().map(c=>`<div class="grp">${esc(modLabel(c))}${MOD[c]?.fm?'<span class="fm">FM</span>':''}</div>${bulletRows(byMod[c].sort((p,q)=>p.k.localeCompare(q.k)).map(o=>({name:esc(o.k.includes('-')?`L${lessonKey(o.k).n} ${lessonKey(o.k).name}`:MOD[o.k]?.name),v:o.pct,m:cg[o.k]?.pct,detail:`${o.got} of ${o.max} marks · Q${o.parts.map(qlab).join(', Q')}`})))}`).join('')}</div></div>
+  h+=`<div class="grid c-7-5 mt"><div class="card"><div class="card-h"><div><h2>${byL?'Lesson by lesson':'Topic by topic'}</h2><p class="hint">Mapped to the Year 12 scheme of learning. The bar is you, the black line is the ${me.cls} average.</p></div></div><div class="card-b">${Object.keys(byMod).sort().map(c=>`<div class="grp">${esc(modLabel(c))}${MOD[c]?.fm?'<span class="fm">FM</span>':''}</div>${bulletRows(byMod[c].sort((p,q)=>p.k.localeCompare(q.k)).map(o=>({name:esc(o.k.includes('-')?`L${lessonKey(o.k).n} ${lessonKey(o.k).name}`:MOD[o.k]?.name),v:o.pct,o,m:cg[o.k]?.pct,detail:`${o.got} of ${o.max} marks · Q${o.parts.map(qlab).join(', Q')}`})))}`).join('')}</div></div>
   <div class="stack"><div class="card"><div class="card-h"><div><h2>Confidence check</h2><p class="hint">How sure you felt against the marks you got.</p></div></div><div class="card-b">${quadrant(classify(a,[me.id]))}</div></div>
   <div class="card"><div class="card-h"><div><h2>Exam technique</h2><p class="hint">Marks you put down to each habit.</p></div></div><div class="card-b">${(()=>{const t={};a.parts.forEach(p=>Object.entries(x.ans[p.id]?.r||{}).forEach(([k,v])=>t[k]=(t[k]||0)+v));const arr=Object.entries(t).sort((p,q)=>q[1]-p[1]);return arr.length?hbars(arr.map(([k,v])=>({name:STATIC.reasons[k],v,vt:v+(v===1?' mark':' marks')}))):'<div class="empty">No lost marks explained.</div>'})()}</div></div></div></div>`;
   h+=`<div class="card mt"><div class="card-h"><div><h2>What to work on, and where to find it</h2><p class="hint">Your lessons under 70%, lowest first. Tick questions off as you do them, your teacher can see what you've completed.</p></div></div><div class="card-b">${dev.length?dev.map(o=>focusBlock(o,me.id,!readOnly)).join(''):'<div class="empty">Nothing under 70%. Try the Level 2 and 3 questions on Integral for any topic.</div>'}</div></div>`;
@@ -484,7 +487,7 @@ function sProgress(me){
     h+=`<div class="smc"><div class="hd"><div><h3>${esc(MOD[code]?.name||code)}${MOD[code]?.fm?'<span class="fm">FM</span>':''}</h3><div class="cd">${code} · ${esc(MOD[code]?.ref||'')}</div></div>${chip(lastV,lastV+'%')}</div>${smallMult([{name:me.cls+' average',color:'var(--muted)',pts:cl,dash:true},{name:'You',color:'var(--k1)',pts:you,area:true,label:true}],labels)}</div>`});
   h+=`</div><div class="legend"><span><i class="sw line" style="background:var(--k1)"></i>You</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--muted) 0 4px,transparent 4px 7px)"></i>${me.cls} average</span><span><i class="sw" style="background:var(--good-z);box-shadow:inset 0 0 0 1px var(--line)"></i>Secure zone</span><span><i class="sw" style="background:var(--bad-z);box-shadow:inset 0 0 0 1px var(--line)"></i>Priority zone</span></div></div></div>`;
   const keys=sortLessons([...new Set(mine.flatMap(a=>a.parts.flatMap(p=>p.lessons[0]?[p.lessons[0]]:[])))]);
-  if(keys.length)h+=`<div class="card mt"><div class="card-h"><div><h2>Lesson by lesson</h2><p class="hint">Your percentage on each lesson every time it has been assessed.</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Lesson</th>${mine.map(a=>`<th class="c">${a.id}</th>`).join('')}</tr></thead><tbody>${keys.map(k=>`<tr><td><span class="strong">${esc(lessonKey(k).name)}</span> <span class="xs muted">${lessonLabel(k,true)}</span></td>${mine.map(a=>{const g=groupStats(a,[me.id],'lesson')[k];return cellTd(g&&g.max?g.pct:null)}).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+  if(keys.length)h+=`<div class="card mt"><div class="card-h"><div><h2>Lesson by lesson</h2><p class="hint">Your percentage on each lesson every time it has been assessed.</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Lesson</th>${mine.map(a=>`<th class="c">${a.id}</th>`).join('')}</tr></thead><tbody>${keys.map(k=>`<tr><td><span class="strong">${esc(lessonKey(k).name)}</span> <span class="xs muted">${lessonLabel(k,true)}</span></td>${mine.map(a=>{const g=groupStats(a,[me.id],'lesson')[k];return cellTd(g&&g.max?g.pct:null,'',g)}).join('')}</tr>`).join('')}</tbody></table></div></div>`;
   return h;
 }
 // ---------- practice ----------
@@ -522,7 +525,7 @@ function tReport(){
   const totalLost=pr.reduce((t,o)=>t+o.lost,0);const top=pr.slice(0,6);let cum=0;const top3=pr.slice(0,3).reduce((t,o)=>t+o.lost,0);
   h+=`<div class="grid c-7-5"><div class="card"><div class="card-h"><div><h2>Where to focus teaching time</h2><p class="hint">${byL?'Lessons':'Topics'} ranked by total marks lost across ${grpName()}. A big lesson that everyone half-knows outranks a one-mark slip.</p></div></div><div class="card-b">
    <div class="headline">The top three ${byL?'lessons':'topics'} account for <b>${pct(top3,totalLost)}%</b> of all the marks ${grpName()} lost on this paper.</div>
-   ${top.map((o,i)=>{cum+=o.lost;return `<div class="rk"><div class="n">${i+1}</div><div><div class="t">${esc(keyName(o.k))} <span class="xs muted">${keyCode(o.k)}</span></div><div class="why">${o.below.length} student${o.below.length===1?'':'s'} under 50% · Q${o.parts.map(qlab).join(', Q')}${o.why?` · most common reason: ${esc(STATIC.reasons[o.why[0]].split(',')[0].split(' (')[0])}`:''}</div></div><div class="bar-col"><div class="hb"><i style="width:${100*o.lost/top[0].lost}%"></i></div><div class="hb-l">${o.lost} marks lost · ${pct(cum,totalLost)}% cumulative</div></div><div class="pc">${chip(o.pct,o.pct+'%')}</div></div>`}).join('')}
+   ${top.map((o,i)=>{cum+=o.lost;return `<div class="rk"><div class="n">${i+1}</div><div><div class="t">${esc(keyName(o.k))} <span class="xs muted">${keyCode(o.k)}</span></div><div class="why">${o.below.length} student${o.below.length===1?'':'s'} under 50% · Q${o.parts.map(qlab).join(', Q')}${o.why?` · most common reason: ${esc(STATIC.reasons[o.why[0]].split(',')[0].split(' (')[0])}`:''}</div></div><div class="bar-col"><div class="hb"><i style="width:${100*o.lost/top[0].lost}%"></i></div><div class="hb-l">${o.lost} marks lost · ${pct(cum,totalLost)}% cumulative</div></div><div class="pc">${chip(o.pct,fv(o.pct,o))}</div></div>`}).join('')}
   </div></div>
   <div class="card"><div class="card-h"><div><h2>Score distribution</h2><p class="hint">Number of students in each band of marks.</p></div></div><div class="card-b chart">${histogram(scores,a.total)}
    <div class="tw" style="margin-top:14px"><table class="tbl"><thead><tr><th>Class</th><th class="r">Submitted</th><th class="r">Mean</th><th class="r">Median</th></tr></thead><tbody>${classes().filter(c=>S.cls==='all'||c.id===S.cls).map(c=>{const s=submitted(a.id,c.id).map(id=>score(a,id));if(!s.length)return '';return `<tr><td class="strong">${c.id}</td><td class="r">${s.length}/${sidsIn(c.id).length}</td><td class="r">${Math.round(avg(s)*10)/10}</td><td class="r">${median(s)}</td></tr>`}).join('')}</tbody></table></div></div></div></div>`;
@@ -533,11 +536,11 @@ function tReport(){
   const cls=classes().filter(c=>submitted(a.id,c.id).length&&(S.cls==='all'||c.id===S.cls));
   const g=groupStats(a,sub,byL?'lesson':'module');const gc=cls.map(c=>groupStats(a,submitted(a.id,c.id),byL?'lesson':'module'));
   const byMod={};Object.values(g).forEach(o=>{const c=o.k.includes('-')?lessonKey(o.k).code:o.k;(byMod[c]=byMod[c]||[]).push(o)});
-  h+=`<div class="grid c-7-5 mt"><div class="card"><div class="card-h"><div><h2>${byL?'SoL lessons':'SoL topics'}, by class</h2><p class="hint">Grey bar is ${grpName()}, each dot is a class. Background shading marks the Priority, Developing and Secure zones.</p></div></div><div class="card-b">${Object.keys(byMod).sort().map(c=>`<div class="grp">${esc(modLabel(c))}${MOD[c]?.fm?'<span class="fm">FM</span>':''}</div>${dotRows(byMod[c].sort((p,q)=>p.k.localeCompare(q.k)).map(o=>({name:esc(o.k.includes('-')?`L${lessonKey(o.k).n} ${lessonKey(o.k).name}`:MOD[o.k]?.name),plain:keyName(o.k),sub:`Q${o.parts.map(qlab).join(', Q')}`,v:o.pct,dots:gc.map((x,i)=>({cls:cls[i].id,v:x[o.k]?.pct}))})))}`).join('')}
+  h+=`<div class="grid c-7-5 mt"><div class="card"><div class="card-h"><div><h2>${byL?'SoL lessons':'SoL topics'}, by class</h2><p class="hint">Grey bar is ${grpName()}, each dot is a class. Background shading marks the Priority, Developing and Secure zones.</p></div></div><div class="card-b">${Object.keys(byMod).sort().map(c=>`<div class="grp">${esc(modLabel(c))}${MOD[c]?.fm?'<span class="fm">FM</span>':''}</div>${dotRows(byMod[c].sort((p,q)=>p.k.localeCompare(q.k)).map(o=>({name:esc(o.k.includes('-')?`L${lessonKey(o.k).n} ${lessonKey(o.k).name}`:MOD[o.k]?.name),plain:keyName(o.k),sub:`Q${o.parts.map(qlab).join(', Q')}`,v:o.pct,o,dots:gc.map((x,i)=>({cls:cls[i].id,v:x[o.k]?.pct,o:x[o.k]}))})))}`).join('')}
    <div class="legend"><span><i class="sw" style="background:var(--line-2);height:6px"></i>${grpName()}</span>${cls.map((c,i)=>`<span><i class="sw dot" style="background:${KCOL[i%3]}"></i>${c.id}</span>`).join('')}</div></div></div>`;
   const mods=[...new Set(a.parts.map(p=>p.module))].sort();
   const {t,who}=reasonTotals(a,sub);const arr=Object.entries(t).sort((x,y)=>y[1]-x[1]).slice(0,8);
-  h+=`<div class="stack"><div class="card"><div class="card-h"><div><h2>Classes side by side</h2><p class="hint">Facility on each SoL topic.</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Class</th>${mods.map(m=>`<th class="c" data-tip="${tip(modLabel(m))}">${m}</th>`).join('')}</tr></thead><tbody>${cls.map(c=>{const gg=groupStats(a,submitted(a.id,c.id),'module');return `<tr><td class="strong">${c.id}</td>${mods.map(m=>cellTd(gg[m].pct,`data-tip="${tip(c.id+' · '+modLabel(m),gg[m].got+'/'+gg[m].max+' marks')}"`)).join('')}</tr>`}).join('')}<tr><td class="strong">${grpName()}</td>${mods.map(m=>{const gg=groupStats(a,sub,'module');return cellTd(gg[m].pct)}).join('')}</tr></tbody></table><div class="xs muted" style="margin-top:10px">${mods.map(m=>`<b>${m}</b> ${esc(MOD[m]?.name)}`).join(' · ')}</div></div></div>
+  h+=`<div class="stack"><div class="card"><div class="card-h"><div><h2>Classes side by side</h2><p class="hint">Facility on each SoL topic.</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Class</th>${mods.map(m=>`<th class="c" data-tip="${tip(modLabel(m))}">${m}</th>`).join('')}</tr></thead><tbody>${cls.map(c=>{const gg=groupStats(a,submitted(a.id,c.id),'module');return `<tr><td class="strong">${c.id}</td>${mods.map(m=>cellTd(gg[m].pct,`data-tip="${tip(c.id+' · '+modLabel(m),gg[m].pct+'% · average '+r1(gg[m].ag)+' of '+r1(gg[m].am)+' marks')}"`,gg[m])).join('')}</tr>`}).join('')}<tr><td class="strong">${grpName()}</td>${mods.map(m=>{const gg=groupStats(a,sub,'module');return cellTd(gg[m].pct,'',gg[m])}).join('')}</tr></tbody></table><div class="xs muted" style="margin-top:10px">${mods.map(m=>`<b>${m}</b> ${esc(MOD[m]?.name)}`).join(' · ')}</div></div></div>
    <div class="card"><div class="card-h"><div><h2>Exam technique</h2><p class="hint">Marks students put down to each habit.</p></div></div><div class="card-b">${arr.length?hbars(arr.map(([k,v])=>({name:STATIC.reasons[k],v,vt:`${v} <span class="xs muted">· ${who[k].size} students</span>`,detail:`${v} marks · ${who[k].size} students`}))):'<div class="empty">No reasons recorded.</div>'}</div></div></div></div>`;
   h+=`<div class="card mt"><div class="card-h"><div><h2>Confidence check</h2><p class="hint">Every student rating (one per question part) placed by how confident they felt and whether they secured 70% of the marks. Chips show the questions that appear most.</p></div></div><div class="card-b">${quadrant(classify(a,sub),{teacher:true})}</div></div>`;
   return h;
@@ -552,8 +555,8 @@ function tTime(){
    const cols=[{name:S.cls==='all'?'All':S.cls,stat:(a,by)=>groupStats(a,submitted(a.id,S.cls),by)}].concat(cl.map(c=>({name:c.id,stat:(a,by)=>groupStats(a,submitted(a.id,c.id),by)})));
    h+=combinedCard({pool:as0,cols,sid:'_',isT:true,title:'Combined results by SoL topic',hint:`Every mark on each topic added up across the assessments you switch on, for ${grpName()}. The rest of this page follows the same switches.`})+'<div class="mt"></div>';}
   const as=cmbAssessments(as0);if(!as.length)return h;
-  h+=`<div class="card"><div class="card-h"><div><h2>Topic facility by assessment</h2><p class="hint">Percentage of available marks gained. A dot means the topic wasn't in that paper.</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>SoL topic</th>${as.map(a=>`<th class="c">${a.id}</th>`).join('')}<th class="r">Change</th></tr></thead><tbody>${mods.map(m=>{const v=as.map(a=>{const g=groupStats(a,submitted(a.id,S.cls),'module')[m];return g&&g.max?g.pct:null});const f=v.find(x=>x!=null),l=[...v].reverse().find(x=>x!=null),n=v.filter(x=>x!=null).length;const d=n>1?l-f:null;
-    return `<tr><td><span class="strong">${esc(MOD[m]?.name||m)}</span>${MOD[m]?.fm?'<span class="fm">FM</span>':''} <span class="xs muted">${m}</span></td>${v.map(cellTd).join('')}<td class="r strong">${d==null?'<span class="muted">–</span>':`<span style="color:${d>=5?'var(--good)':d<=-5?'var(--bad)':'var(--muted)'}">${d>0?'▲ +':d<0?'▼ ':''}${d}</span>`}</td></tr>`}).join('')}</tbody></table></div></div>`;
+  h+=`<div class="card"><div class="card-h"><div><h2>Topic facility by assessment</h2><p class="hint">Percentage of available marks gained. A dot means the topic wasn't in that paper.</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>SoL topic</th>${as.map(a=>`<th class="c">${a.id}</th>`).join('')}<th class="r">Change</th></tr></thead><tbody>${mods.map(m=>{const gs=as.map(a=>{const g=groupStats(a,submitted(a.id,S.cls),'module')[m];return g&&g.max?g:null});const v=gs.map(g=>g?g.pct:null);const f=v.find(x=>x!=null),l=[...v].reverse().find(x=>x!=null),n=v.filter(x=>x!=null).length;const d=n>1?l-f:null;
+    return `<tr><td><span class="strong">${esc(MOD[m]?.name||m)}</span>${MOD[m]?.fm?'<span class="fm">FM</span>':''} <span class="xs muted">${m}</span></td>${v.map((x,i)=>cellTd(x,'',gs[i])).join('')}<td class="r strong">${d==null?'<span class="muted">–</span>':`<span style="color:${d>=5?'var(--good)':d<=-5?'var(--bad)':'var(--muted)'}">${d>0?'▲ +':d<0?'▼ ':''}${d}</span>`}</td></tr>`}).join('')}</tbody></table></div></div>`;
   const cl=classes().filter(c=>sidsIn(c.id).length&&(S.cls==='all'||c.id===S.cls));
   h+=`<div class="card mt"><div class="card-h"><div><h2>Topic trends by class</h2><p class="hint">One chart per topic. Hover a point for the value.</p></div></div><div class="card-b"><div class="sm">${mods.map(m=>{const series=cl.map((c,i)=>({name:c.id,color:KCOL[i%3],pts:as.map(a=>{const g=groupStats(a,submitted(a.id,c.id),'module')[m];return g&&g.max?g.pct:null})}));const coh=as.map(a=>{const g=groupStats(a,submitted(a.id,S.cls),'module')[m];return g&&g.max?g.pct:null});const lv=[...coh].reverse().find(v=>v!=null);
     return `<div class="smc"><div class="hd"><div><h3>${esc(MOD[m]?.name||m)}${MOD[m]?.fm?'<span class="fm">FM</span>':''}</h3><div class="cd">${m}</div></div>${chip(lv,lv+'%')}</div>${smallMult(series,as.map(a=>a.id))}</div>`}).join('')}</div>
@@ -567,10 +570,10 @@ function tLessons(){
   const as=assessments().filter(a=>Object.keys(respMap(a.id)).length);
   [...new Set(STATIC.modules.map(m=>m.window))].forEach(w=>{const ms=STATIC.modules.filter(m=>m.window===w);
     h+=`<div class="card mt"><div class="card-h"><div><h2>${w==='PA1'?'Taught before PA1':'Taught before '+esc(w)}</h2><p class="hint">${ms.length} topics</p></div></div><div class="card-b tw"><table class="tbl"><thead><tr><th>Topic</th><th>Chapter</th><th class="r">Weeks</th><th>Assessed in</th><th class="c">Latest</th></tr></thead><tbody>${ms.map(m=>{const inA=as.filter(a=>a.parts.some(p=>p.module===m.code));const last=inA[inA.length-1];const g=last?groupStats(last,submitted(last.id,S.cls),'module')[m.code]:null;
-      let row=`<tr><td><span class="strong">${esc(m.name)}</span>${m.fm?'<span class="fm">FM</span>':''} <span class="xs muted">${m.code}</span></td><td class="small muted">${esc(m.ref)}</td><td class="r">${m.weeks||''}</td><td>${inA.map(a=>`<span class="chip brand">${a.id}</span>`).join(' ')||'<span class="xs muted">Not yet</span>'}</td>${g?cellTd(g.pct):'<td></td>'}</tr>`;
+      let row=`<tr><td><span class="strong">${esc(m.name)}</span>${m.fm?'<span class="fm">FM</span>':''} <span class="xs muted">${m.code}</span></td><td class="small muted">${esc(m.ref)}</td><td class="r">${m.weeks||''}</td><td>${inA.map(a=>`<span class="chip brand">${a.id}</span>`).join(' ')||'<span class="xs muted">Not yet</span>'}</td>${g?cellTd(g.pct,'',g):'<td></td>'}</tr>`;
       const a=inA.find(x=>x.parts.some(p=>p.module===m.code&&p.lessons.length));
       if(m.lessons&&a){const gl=groupStats(a,submitted(a.id,S.cls),'lesson');row+=m.lessons.map((ln,i)=>{const k=`${m.code}-${i+1}`,o=gl[k];const low=o?submitted(a.id,S.cls).filter(id=>{const s=groupStats(a,[id],'lesson')[k];return s&&s.pct<50}).length:0;
-        return `<tr><td style="padding-left:28px" class="small">L${i+1} ${esc(ln)}</td><td class="xs muted" colspan="2">${o?'Q'+o.parts.map(qlab).join(', Q')+' in '+a.id:'Not assessed yet'}</td><td class="xs">${o?`${low} under 50%`:''}</td>${o?cellTd(o.pct):'<td></td>'}</tr>`}).join('')}
+        return `<tr><td style="padding-left:28px" class="small">L${i+1} ${esc(ln)}</td><td class="xs muted" colspan="2">${o?'Q'+o.parts.map(qlab).join(', Q')+' in '+a.id:'Not assessed yet'}</td><td class="xs">${o?`${low} under 50%`:''}</td>${o?cellTd(o.pct,'',o):'<td></td>'}</tr>`}).join('')}
       return row}).join('')}</tbody></table></div></div>`});
   return h;
 }
@@ -592,7 +595,7 @@ function tStudents(){
   const a=asm(S.aid);if(!a)return noAssess();const r=respMap(a.id);const byL=hasLessons(a);
   const exp=expectedFor(a,S.cls);const extra=submitted(a.id,S.cls).filter(id=>!exp.includes(id));const pool=exp.concat(extra);
   const miss=pool.filter(id=>!r[id]);const done=pool.filter(id=>r[id]);
-  const view=S.stView||'pct',sort=S.stSort||'low',show=S.stShow||'all';
+  const view=MK()?'marks':'pct',sort=S.stSort||'low',show=S.stShow||'all';
   const keys=byL?sortLessons([...new Set(a.parts.map(p=>p.lessons[0]))]):[...new Set(a.parts.map(p=>p.module))].sort();
   let h=`<div class="ph"><div><div class="eyebrow">Students</div><h1>${esc(a.name.split(':')[0])} by student</h1><p class="desc">Each cell is a student's ${view==='pct'?'percentage':'marks'} on a ${byL?'lesson':'topic'}. Click a column heading to sort by it, or a name to open that student's report.</p></div>${tFilters()}</div>`;
   h+=`<div class="band">
@@ -614,7 +617,7 @@ function tStudents(){
   const arrow=k=>sort===k?(k.startsWith('k:')?(S.stDir===-1?' ▼':' ▲'):''):'';
   const hsort=(k,label)=>`<button type="button" class="hs ${sort===k||(k==='low'&&sort==='high')||(k==='sur'&&sort==='sur-d')?'on':''}" data-act="stsort" data-v="${k}">${label}</button>`;
   h+=`<div class="card"><div class="card-h stbar"><div class="row" style="gap:14px;flex-wrap:wrap;align-items:flex-end">
-     <div class="fl"><span>Show as</span>${seg('stview',[['pct','Percentages'],['marks','Marks']],view)}</div>
+     <div class="fl"><span>Show as</span>${seg('unit',[['pct','Percentages'],['marks','Marks']],view)}</div>
      <div class="fl"><span>Students</span>${seg('stshow',[['all',`All ${pool.length}`],['done',`Recorded ${done.length}`],['miss',`Not recorded ${miss.length}`]],show)}</div>
      <label class="fl"><span>Order by</span><select id="st-sort">${sortOpts.map(([v,l])=>`<option value="${v}" ${v===sort?'selected':''}>${l}</option>`).join('')}${sort.startsWith('k:')?`<option value="${esc(sort)}" selected>${esc(byL?lessonLabel(sort.slice(2),true):sort.slice(2))} (${S.stDir===-1?'highest':'lowest'} first)</option>`:''}</select></label></div></div>
    <div class="card-b tw">${rows.length?`<table class="heat ${view==='marks'?'mk':''}"><thead><tr><th style="text-align:left">${hsort(sort==='sur'?'sur-d':'sur','Student'+(sort==='sur'?' ▲':sort==='sur-d'?' ▼':''))}</th><th style="text-align:left">${hsort(sort==='low'?'high':'low','Total'+(sort==='low'?' ▲':sort==='high'?' ▼':''))}</th>${keys.map(k=>`<th class="rot"><div data-tip="${tip(byL?lessonLabel(k):modLabel(k),'Click to sort by this')}"><button type="button" class="hs ${sort==='k:'+k?'on':''}" data-act="stsort" data-v="k:${esc(k)}">${esc(byL?lessonLabel(k,true):k)}${arrow('k:'+k)}</button></div></th>`).join('')}</tr></thead><tbody>${rows.map(o=>{
@@ -633,7 +636,7 @@ function tPlan(){
   let h=`<div class="ph"><div><div class="eyebrow">Revision plan</div><h1>Starters and homework from ${esc(a.id)}</h1><p class="desc">Built from the results for ${grpName()}. Copy it straight into your starter and Link Back planning.</p></div><div class="row" style="align-items:flex-end">${tFilters()}<button class="btn" data-act="copy" data-what="plan">${IC.copy}Copy plan</button></div></div>`;
   if(!sub.length)return h+`<div class="empty">No results yet.</div>`;
   h+=planDlCard()+'<div class="mt"></div>';
-  h+=`<div class="card"><div class="card-h"><div><h2>Whole-class starters</h2><p class="hint">The three lowest ${hasLessons(a)?'lessons':'topics'}, with two past-paper questions each. Questions already used in a Link Back or starter are pushed down the list.</p></div>${sheetBtns(whole.flatMap(o=>{const K=kc(o);return bankFor(K.code,K.n,2,false,'_').items.map(q=>q.id)}),a.name+' starters')}</div><div class="card-b">${whole.map((o,i)=>{const K=kc(o);const b=bankFor(K.code,K.n,2,false,'_').items;return `<div class="rk" style="grid-template-columns:28px minmax(0,1fr) 64px;align-items:start"><div class="n">${i+1}</div><div><div class="t">${esc(keyName(o.k))} <span class="xs muted">${keyCode(o.k)}</span></div>${b.map(q=>qItem(q,'_',false,true)).join('')}</div><div class="pc">${chip(o.pct,o.pct+'%')}</div></div>`}).join('')}</div></div>`;
+  h+=`<div class="card"><div class="card-h"><div><h2>Whole-class starters</h2><p class="hint">The three lowest ${hasLessons(a)?'lessons':'topics'}, with two past-paper questions each. Questions already used in a Link Back or starter are pushed down the list.</p></div>${sheetBtns(whole.flatMap(o=>{const K=kc(o);return bankFor(K.code,K.n,2,false,'_').items.map(q=>q.id)}),a.name+' starters')}</div><div class="card-b">${whole.map((o,i)=>{const K=kc(o);const b=bankFor(K.code,K.n,2,false,'_').items;return `<div class="rk" style="grid-template-columns:28px minmax(0,1fr) 64px;align-items:start"><div class="n">${i+1}</div><div><div class="t">${esc(keyName(o.k))} <span class="xs muted">${keyCode(o.k)}</span></div>${b.map(q=>qItem(q,'_',false,true)).join('')}</div><div class="pc">${chip(o.pct,fv(o.pct,o))}</div></div>`}).join('')}</div></div>`;
   h+=`<div class="card mt"><div class="card-h"><div><h2>Targeted homework groups</h2><p class="hint">Students under 50% on a ${hasLessons(a)?'lesson':'topic'}, with three questions to set. A student can be in more than one group.</p></div></div><div class="card-b"><div class="grid c2">${groups.map(o=>{const K=kc(o);const b=bankFor(K.code,K.n,3,false,'_').items;return `<div class="focus" style="margin:0"><div class="fh"><div><h3>${esc(keyName(o.k))}</h3><div class="mod">${esc(keyCode(o.k))} · ${o.pct}% overall</div></div><span class="chip brand">${o.below.length} students</span></div><div style="padding:14px 20px 4px"><div class="xs strong muted" style="letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">Students</div><div class="row" style="gap:6px">${o.below.map(id=>`<span class="chip plain">${esc(stu(id).name)}</span>`).join('')}</div>${o.why?`<p class="xs muted" style="margin-top:10px">Most common reason: ${esc(STATIC.reasons[o.why[0]])}</p>`:''}</div><div class="qs"><div class="qs-h">${sheetBtns(b.map(q=>q.id),keyName(o.k)+' homework')}</div>${b.map(q=>qItem(q,'_',false,true)).join('')}</div></div>`}).join('')}</div></div></div>`;
   return h;
 }
@@ -1047,9 +1050,12 @@ function render(){
   if(S.recovery||!ME){root.innerHTML=`<div class="main" style="min-height:100%">${S.view==='staff'&&!S.recovery?teacherLogin():authView()}</div>`;return}
   if(!LOADED){root.innerHTML=`<div class="content"><div class="empty">Loading…</div></div>`;return}
   const body=ROLE!=='teacher'?studentPage(stu(ME.id)):({report:tReport,time:tTime,lessons:tLessons,students:tStudents,plan:tPlan,setup:tSetup,bank:tBank,preview:tPreview,accounts:tAccounts}[S.ttab]||tReport)();
-  root.innerHTML=`<div class="app">${sidebar()}<div class="main"><main class="content" id="main">${body}</main></div></div>`;
+  const withUnit=ROLE!=='teacher'?['home','results','progress'].includes(S.stab):(['report','time','students','lessons','plan'].includes(S.ttab)||(S.ttab==='preview'&&['home','results','progress'].includes(S.stab)));
+  const body2=withUnit?body.replace('<div class="ph">','<div class="ph has-unit">'+unitSwitch()):body;
+  root.innerHTML=`<div class="app">${sidebar()}<div class="main"><main class="content" id="main">${body2}</main></div></div>`;
   typeset(document.getElementById('main'));
 }
+function unitSwitch(){const m=MK();return `<div class="unitsw" role="group" aria-label="Show results as"><span>Show</span><button type="button" data-act="unit" data-v="pct" aria-pressed="${!m}">%</button><button type="button" data-act="unit" data-v="marks" aria-pressed="${m}">Marks</button></div>`}
 function typeset(el){const go=()=>{const t=el.querySelectorAll('.mj');if(t.length&&window.MathJax?.typesetPromise)MathJax.typesetPromise([...t]).catch(()=>{})};if(window.MathJax?.typesetPromise)go();else setTimeout(()=>{if(window.MathJax?.typesetPromise)go()},1500)}
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2400)}
 function copy(text,msg){const done=()=>toast(msg);try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
@@ -1097,7 +1103,7 @@ document.addEventListener('click',async e=>{
   else if(act==='tomiss'){document.getElementById('missing')?.scrollIntoView({behavior:'smooth',block:'center'});return}
   else if(act==='repdl'){downloadReport(S.aid,S.cls,false,t.dataset.fmt);return}
   else if(act==='dlfmt'){S.dlCls=document.getElementById('dl-cls')?.value||S.dlCls;S.dlNames=!!document.getElementById('dl-names')?.checked;S.dlFmt=t.dataset.v;const y=window.scrollY;save();render();window.scrollTo(0,y);return}
-  else if(act==='stview'){S.stView=t.dataset.v}
+  else if(act==='unit'){S.unit=t.dataset.v;const y=window.scrollY;save();render();window.scrollTo(0,y);return}
   else if(act==='stshow'){S.stShow=t.dataset.v}
   else if(act==='stsort'){const v=t.dataset.v;if(v.startsWith('k:')){S.stDir=S.stSort===v?-(S.stDir||1):1}S.stSort=v;const y=window.scrollY;save();render();window.scrollTo(0,y);return}
   else if(act==='copy'){if(t.dataset.what==='plan')copy(planText(),'Plan copied');else{const a=asm(S.aid);const r=respMap(a.id);copy(expectedFor(a,S.cls).filter(id=>!r[id]).map(id=>stu(id).email).join('; '),'Email addresses copied')}return}
